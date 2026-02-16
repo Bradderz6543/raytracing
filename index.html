@@ -836,6 +836,16 @@
           <span class="prop-value-display" id="fov-val">60°</span>
         </div>
         <div class="settings-row">
+          <label>Focus Dist</label>
+          <input type="range" id="cam-focus" min="0.5" max="30" value="5" step="0.1" oninput="camera.focusDist=+this.value; document.getElementById('focus-val').textContent=this.value; drawPreview()">
+          <span class="prop-value-display" id="focus-val">5</span>
+        </div>
+        <div class="settings-row">
+          <label>Aperture</label>
+          <input type="range" id="cam-aperture" min="0" max="1.0" value="0.0" step="0.01" oninput="camera.aperture=+this.value; document.getElementById('aperture-val').textContent=parseFloat(this.value).toFixed(2); drawPreview()">
+          <span class="prop-value-display" id="aperture-val">0.00</span>
+        </div>
+        <div class="settings-row">
           <label>Reset</label>
           <button class="toolbar-btn" onclick="resetCamera()" style="font-size:11px;padding:4px 12px;">Reset Camera</button>
         </div>
@@ -854,8 +864,18 @@
       <div class="panel-body">
         <canvas class="env-preview" id="env-preview"></canvas>
         <div class="settings-row">
+          <label>Preset</label>
+          <select id="env-preset" onchange="applyEnvironmentPreset(this.value)">
+            <option value="default" selected>Default</option>
+            <option value="cornell">Cornell Box</option>
+            <option value="sky">Sky</option>
+            <option value="studio">Studio</option>
+            <option value="dark">Dark + Colored Lights</option>
+          </select>
+        </div>
+        <div class="settings-row">
           <label>Sky Intensity</label>
-          <input type="range" id="sky-intensity" min="0.5" max="3.0" step="0.1" value="1.5" oninput="skyIntensity=+this.value; drawPreview()">
+          <input type="range" id="sky-intensity" min="0" max="5.0" step="0.1" value="1.5" oninput="skyIntensity=+this.value; drawPreview()">
         </div>
         <div class="settings-row">
           <label>Sun Power</label>
@@ -917,7 +937,15 @@ const camera = {
   theta: 0.3,   // horizontal angle
   phi: 0.45,    // vertical angle (from top)
   fov: 60,
+  focusDist: 5,
+  aperture: 0.0,
 };
+
+// Environment preset state
+let currentEnvPreset = 'default';
+let envRoomColor = null;       // null = no room (use sky)
+let envRoomEmission = null;    // for emissive walls (Cornell Box)
+let envLights = [];            // extra point/area lights for presets
 
 function getCameraPos() {
   const sinP = Math.sin(camera.phi);
@@ -937,8 +965,14 @@ function resetCamera() {
   camera.theta = 0.3;
   camera.phi = 0.45;
   camera.fov = 60;
+  camera.focusDist = 5;
+  camera.aperture = 0.0;
   document.getElementById('cam-fov').value = 60;
   document.getElementById('fov-val').textContent = '60°';
+  document.getElementById('cam-focus').value = 5;
+  document.getElementById('focus-val').textContent = '5';
+  document.getElementById('cam-aperture').value = 0;
+  document.getElementById('aperture-val').textContent = '0.00';
   updateCamInfo();
   drawPreview();
 }
@@ -958,12 +992,16 @@ let lastMouse = [0, 0];
 
 function initCameraControls() {
   const vp = document.getElementById('viewport');
+  let mouseDownPos = [0, 0];
+  let mouseDownTime = 0;
 
   vp.addEventListener('mousedown', (e) => {
     if (appMode !== 'edit') return;
     isDragging = true;
     dragButton = e.button;
     lastMouse = [e.clientX, e.clientY];
+    mouseDownPos = [e.clientX, e.clientY];
+    mouseDownTime = performance.now();
     e.preventDefault();
     // Hide hint on first interaction
     const hint = document.getElementById('viewport-hint');
@@ -995,9 +1033,21 @@ function initCameraControls() {
     drawPreview();
   });
 
-  window.addEventListener('mouseup', () => {
+  window.addEventListener('mouseup', (e) => {
+    const wasDragging = isDragging;
     isDragging = false;
     dragButton = -1;
+
+    // Click-to-select: only if mouse didn't move much and was quick
+    if (appMode === 'edit' && wasDragging) {
+      const dx = e.clientX - mouseDownPos[0];
+      const dy = e.clientY - mouseDownPos[1];
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      const elapsed = performance.now() - mouseDownTime;
+      if (dist < 5 && elapsed < 300 && e.button === 0) {
+        handleViewportClick(e);
+      }
+    }
   });
 
   vp.addEventListener('wheel', (e) => {
@@ -1036,6 +1086,113 @@ function toggleWireframe() {
     btn.style.borderColor = '';
     btn.style.color = '';
   }
+  drawPreview();
+}
+
+// ============================================================
+// Click-to-Select via Raycasting
+// ============================================================
+function handleViewportClick(e) {
+  const vp = document.getElementById('viewport');
+  const rect = vp.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const W = previewCanvas.width;
+  const H = previewCanvas.height;
+
+  // Convert to normalized device coords
+  const fovRad = camera.fov * Math.PI / 180;
+  const aspect = W / H;
+  const halfH = Math.tan(fovRad / 2);
+  const halfW = halfH * aspect;
+
+  const u = (2 * mx / W - 1) * halfW;
+  const v = (1 - 2 * my / H) * halfH;
+
+  const camPos = getCameraPos();
+  const camDir = vnorm(vsub(camera.target, camPos));
+  const camRight = vnorm(vcross(camDir, [0, 1, 0]));
+  const camUp = vcross(camRight, camDir);
+  const rd = vnorm(vadd(vadd(vmul(camRight, u), vmul(camUp, v)), camDir));
+
+  // Intersect with all scene objects, find closest
+  let closestT = Infinity;
+  let closestIdx = -1;
+
+  for (let i = 0; i < sceneObjects.length; i++) {
+    const obj = sceneObjects[i];
+    let hit;
+    if (obj.type === 'sphere') {
+      hit = intersectSphere(camPos, rd, obj.pos, obj.size);
+    } else {
+      hit = intersectBox(camPos, rd, obj.pos, obj.size);
+    }
+    if (hit && hit.t < closestT) {
+      closestT = hit.t;
+      closestIdx = i;
+    }
+  }
+
+  selectedIndex = closestIdx;
+  updateObjectList();
+  loadProperties();
+  drawPreview();
+
+  // Scroll selected item into view in sidebar
+  if (closestIdx >= 0) {
+    const items = document.querySelectorAll('#object-list .obj-item');
+    if (items[closestIdx]) {
+      items[closestIdx].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }
+}
+
+// ============================================================
+// Environment Presets
+// ============================================================
+function applyEnvironmentPreset(preset) {
+  currentEnvPreset = preset;
+  envRoomColor = null;
+  envRoomEmission = null;
+  envLights = [];
+
+  switch (preset) {
+    case 'default':
+      skyIntensity = 1.5;
+      sunPower = 10;
+      break;
+    case 'cornell':
+      skyIntensity = 0;
+      sunPower = 0;
+      envRoomColor = { floor: [0.8, 0.8, 0.8], ceiling: [0.8, 0.8, 0.8], back: [0.8, 0.8, 0.8], left: [0.8, 0.2, 0.2], right: [0.2, 0.8, 0.2] };
+      envRoomEmission = { ceiling: [8, 8, 7] };
+      break;
+    case 'sky':
+      skyIntensity = 2.5;
+      sunPower = 15;
+      break;
+    case 'studio':
+      skyIntensity = 0.3;
+      sunPower = 0;
+      envLights = [
+        { pos: [3, 4, 0], color: [12, 12, 14], radius: 0.5 },
+        { pos: [-3, 4, 0], color: [12, 12, 14], radius: 0.5 },
+        { pos: [0, 4, -5], color: [8, 8, 10], radius: 0.8 },
+      ];
+      break;
+    case 'dark':
+      skyIntensity = 0.05;
+      sunPower = 0;
+      envLights = [
+        { pos: [3, 3, -2], color: [10, 2, 2], radius: 0.3 },
+        { pos: [-3, 3, -4], color: [2, 2, 12], radius: 0.3 },
+        { pos: [0, 4, -6], color: [2, 10, 4], radius: 0.3 },
+      ];
+      break;
+  }
+
+  document.getElementById('sky-intensity').value = skyIntensity;
+  document.getElementById('sun-power').value = sunPower;
   drawPreview();
 }
 
@@ -1226,12 +1383,31 @@ function drawPreview() {
   const W = previewCanvas.width;
   const H = previewCanvas.height;
 
-  // Background gradient
+  // Background gradient (varies by environment preset)
   const grad = ctx.createLinearGradient(0, 0, 0, H);
-  grad.addColorStop(0, '#12121e');
-  grad.addColorStop(0.4, '#141428');
-  grad.addColorStop(0.7, '#101020');
-  grad.addColorStop(1, '#0a0a14');
+  if (currentEnvPreset === 'cornell') {
+    grad.addColorStop(0, '#2a1a1a');
+    grad.addColorStop(0.5, '#1a1a1a');
+    grad.addColorStop(1, '#1a1a1a');
+  } else if (currentEnvPreset === 'sky') {
+    grad.addColorStop(0, '#1a2a40');
+    grad.addColorStop(0.4, '#2a3a55');
+    grad.addColorStop(0.7, '#1a2535');
+    grad.addColorStop(1, '#0a1520');
+  } else if (currentEnvPreset === 'studio') {
+    grad.addColorStop(0, '#181820');
+    grad.addColorStop(0.5, '#1a1a24');
+    grad.addColorStop(1, '#101018');
+  } else if (currentEnvPreset === 'dark') {
+    grad.addColorStop(0, '#050508');
+    grad.addColorStop(0.5, '#080810');
+    grad.addColorStop(1, '#030306');
+  } else {
+    grad.addColorStop(0, '#12121e');
+    grad.addColorStop(0.4, '#141428');
+    grad.addColorStop(0.7, '#101020');
+    grad.addColorStop(1, '#0a0a14');
+  }
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
 
@@ -1242,8 +1418,10 @@ function drawPreview() {
   ctx.fillStyle = vignette;
   ctx.fillRect(0, 0, W, H);
 
-  // Draw ground grid
-  drawGrid(ctx);
+  // Draw ground grid (skip for Cornell Box)
+  if (currentEnvPreset !== 'cornell') {
+    drawGrid(ctx);
+  }
 
   // Draw objects sorted by depth
   const camPos = getCameraPos();
@@ -1258,6 +1436,16 @@ function drawPreview() {
 
   // Draw axes indicator
   drawAxesIndicator(ctx);
+
+  // Draw focus plane indicator (when aperture > 0)
+  if (camera.aperture > 0) {
+    drawFocusIndicator(ctx);
+  }
+
+  // Draw environment light indicators
+  if (envLights.length > 0) {
+    drawEnvLightIndicators(ctx);
+  }
 
   // FPS counter
   const elapsed = performance.now() - t0;
@@ -1648,6 +1836,90 @@ function drawAxesIndicator(ctx) {
   }
 }
 
+function drawFocusIndicator(ctx) {
+  // Draw a focus plane indicator as a dashed rectangle at the focus distance
+  const camPos = getCameraPos();
+  const camDir = vnorm(vsub(camera.target, camPos));
+  const camRight = vnorm(vcross(camDir, [0, 1, 0]));
+  const camUp = vcross(camRight, camDir);
+
+  const focusCenter = vadd(camPos, vmul(camDir, camera.focusDist));
+  const planeSize = camera.focusDist * Math.tan(camera.fov * Math.PI / 360) * 0.6;
+
+  // Draw a diamond/rhombus shape at focus distance
+  const points = [
+    vadd(focusCenter, vmul(camRight, planeSize)),
+    vadd(focusCenter, vmul(camUp, planeSize * 0.6)),
+    vsub(focusCenter, vmul(camRight, planeSize)),
+    vsub(focusCenter, vmul(camUp, planeSize * 0.6)),
+  ];
+
+  const projected = points.map(p => project(p)).filter(p => p !== null);
+  if (projected.length < 4) return;
+
+  // Draw focus plane
+  ctx.save();
+  ctx.setLineDash([6, 4]);
+  ctx.strokeStyle = 'rgba(255, 200, 50, 0.5)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(projected[0].x, projected[0].y);
+  for (let i = 1; i < projected.length; i++) {
+    ctx.lineTo(projected[i].x, projected[i].y);
+  }
+  ctx.closePath();
+  ctx.stroke();
+
+  // Draw center crosshair
+  const center = project(focusCenter);
+  if (center) {
+    ctx.setLineDash([]);
+    ctx.strokeStyle = 'rgba(255, 200, 50, 0.7)';
+    ctx.lineWidth = 1;
+    const cs = 8;
+    ctx.beginPath();
+    ctx.moveTo(center.x - cs, center.y); ctx.lineTo(center.x + cs, center.y);
+    ctx.moveTo(center.x, center.y - cs); ctx.lineTo(center.x, center.y + cs);
+    ctx.stroke();
+
+    // Label
+    ctx.fillStyle = 'rgba(255, 200, 50, 0.8)';
+    ctx.font = '10px sans-serif';
+    ctx.fillText(`f:${camera.focusDist.toFixed(1)}`, center.x + 12, center.y - 6);
+  }
+  ctx.restore();
+}
+
+function drawEnvLightIndicators(ctx) {
+  for (const light of envLights) {
+    const p = project(light.pos);
+    if (!p) continue;
+    const r = Math.max(4, 20 / p.z);
+    const col = light.color;
+    const maxC = Math.max(col[0], col[1], col[2]);
+    const nr = Math.min(255, col[0] / maxC * 255) | 0;
+    const ng = Math.min(255, col[1] / maxC * 255) | 0;
+    const nb = Math.min(255, col[2] / maxC * 255) | 0;
+
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${nr}, ${ng}, ${nb}, 0.4)`;
+    ctx.fill();
+    ctx.strokeStyle = `rgba(${nr}, ${ng}, ${nb}, 0.8)`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Glow
+    const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r * 3);
+    glow.addColorStop(0, `rgba(${nr}, ${ng}, ${nb}, 0.15)`);
+    glow.addColorStop(1, `rgba(${nr}, ${ng}, ${nb}, 0)`);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r * 3, 0, Math.PI * 2);
+    ctx.fillStyle = glow;
+    ctx.fill();
+  }
+}
+
 function drawEnvPreview() {
   const canvas = document.getElementById('env-preview');
   if (!canvas) return;
@@ -1784,14 +2056,85 @@ function intersectPlane(ro, rd, y) {
 // ============================================================
 // Scene Intersection
 // ============================================================
+function intersectRoom(ro, rd) {
+  // Cornell-box style room: 10x8x12 box centered around scene
+  if (!envRoomColor) return null;
+  const roomHalf = [5, 0, 6]; // half extents
+  const roomCenter = [0, 4, -3];
+  let closest = null;
+  let closestT = Infinity;
+
+  // Floor (y=0)
+  if (Math.abs(rd[1]) > 1e-8) {
+    const t = (0 - ro[1]) / rd[1];
+    if (t > 0.001 && t < closestT) {
+      closestT = t;
+      closest = { t, p: vadd(ro, vmul(rd, t)), n: [0, 1, 0], material: 'room', albedo: envRoomColor.floor, emission: null };
+    }
+  }
+  // Ceiling (y=8)
+  if (Math.abs(rd[1]) > 1e-8) {
+    const t = (8 - ro[1]) / rd[1];
+    if (t > 0.001 && t < closestT) {
+      closestT = t;
+      const em = envRoomEmission && envRoomEmission.ceiling ? envRoomEmission.ceiling : null;
+      closest = { t, p: vadd(ro, vmul(rd, t)), n: [0, -1, 0], material: 'room', albedo: envRoomColor.ceiling, emission: em };
+    }
+  }
+  // Back wall (z=-9)
+  if (Math.abs(rd[2]) > 1e-8) {
+    const t = (-9 - ro[2]) / rd[2];
+    if (t > 0.001 && t < closestT) {
+      closestT = t;
+      closest = { t, p: vadd(ro, vmul(rd, t)), n: [0, 0, 1], material: 'room', albedo: envRoomColor.back, emission: null };
+    }
+  }
+  // Left wall (x=-5)
+  if (Math.abs(rd[0]) > 1e-8) {
+    const t = (-5 - ro[0]) / rd[0];
+    if (t > 0.001 && t < closestT) {
+      closestT = t;
+      closest = { t, p: vadd(ro, vmul(rd, t)), n: [1, 0, 0], material: 'room', albedo: envRoomColor.left, emission: null };
+    }
+  }
+  // Right wall (x=5)
+  if (Math.abs(rd[0]) > 1e-8) {
+    const t = (5 - ro[0]) / rd[0];
+    if (t > 0.001 && t < closestT) {
+      closestT = t;
+      closest = { t, p: vadd(ro, vmul(rd, t)), n: [-1, 0, 0], material: 'room', albedo: envRoomColor.right, emission: null };
+    }
+  }
+  return closest;
+}
+
 function intersectScene(ro, rd) {
   let closest = null;
   let closestT = Infinity;
 
-  const gnd = intersectPlane(ro, rd, 0);
-  if (gnd && gnd.t < closestT) {
-    closestT = gnd.t;
-    closest = { ...gnd, material: 'ground' };
+  // Room walls (Cornell Box, etc.)
+  const room = intersectRoom(ro, rd);
+  if (room && room.t < closestT) {
+    closestT = room.t;
+    closest = room;
+  }
+
+  // Ground plane (only if no room)
+  if (!envRoomColor) {
+    const gnd = intersectPlane(ro, rd, 0);
+    if (gnd && gnd.t < closestT) {
+      closestT = gnd.t;
+      closest = { ...gnd, material: 'ground' };
+    }
+  }
+
+  // Environment lights as emissive spheres
+  for (const light of envLights) {
+    const hit = intersectSphere(ro, rd, light.pos, light.radius);
+    if (hit && hit.t < closestT) {
+      closestT = hit.t;
+      closest = { ...hit, material: 'emissive', emission: light.color };
+    }
   }
 
   for (const obj of sceneObjects) {
@@ -1848,6 +2191,24 @@ function tracePath(ro, rd, maxBounces) {
     if (!hit) {
       color = vadd(color, vmulv(throughput, skyColor(curRd)));
       break;
+    }
+
+    // Emissive light sources
+    if (hit.material === 'emissive') {
+      color = vadd(color, vmulv(throughput, hit.emission));
+      break;
+    }
+
+    // Room walls (diffuse with optional emission)
+    if (hit.material === 'room') {
+      if (hit.emission) {
+        color = vadd(color, vmulv(throughput, hit.emission));
+        break;
+      }
+      throughput = vmulv(throughput, hit.albedo);
+      curRo = vadd(hit.p, vmul(hit.n, 0.001));
+      curRd = randomCosineDirection(hit.n);
+      continue;
     }
 
     if (hit.material === 'ground') {
@@ -1938,13 +2299,27 @@ function renderSample() {
   const halfH = Math.tan(fovRad / 2);
   const halfW = halfH * aspect;
   const maxBounces = parseInt(document.getElementById('max-bounces').value) || 8;
+  const aperture = camera.aperture;
+  const focusDist = camera.focusDist;
 
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const u = (2 * (x + rand()) / W - 1) * halfW;
       const v = (1 - 2 * (y + rand()) / H) * halfH;
-      const rd = vnorm(vadd(vadd(vmul(camRight, u), vmul(camUp, v)), camDir));
-      const color = tracePath(camPos, rd, maxBounces);
+      let rd = vnorm(vadd(vadd(vmul(camRight, u), vmul(camUp, v)), camDir));
+      let ro = camPos;
+
+      // Depth of field (thin lens model)
+      if (aperture > 0) {
+        const focusPoint = vadd(ro, vmul(rd, focusDist));
+        const angle = rand() * Math.PI * 2;
+        const radius = aperture * Math.sqrt(rand());
+        const lensOffset = vadd(vmul(camRight, Math.cos(angle) * radius), vmul(camUp, Math.sin(angle) * radius));
+        ro = vadd(camPos, lensOffset);
+        rd = vnorm(vsub(focusPoint, ro));
+      }
+
+      const color = tracePath(ro, rd, maxBounces);
       const idx = (y * W + x) * 3;
       accumBuffer[idx] += color[0];
       accumBuffer[idx + 1] += color[1];
