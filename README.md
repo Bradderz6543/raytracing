@@ -6,10 +6,30 @@ A fully interactive, browser-based path tracer specializing in realistic glass r
 
 ## Features
 
-### 🎨 Interactive Scene Editor
-- Add and remove glass objects (spheres and cubes) via a sidebar UI
-- Adjust position (X, Y, Z), size, and material properties per object
-- Select objects to edit their properties in real-time
+### 🎨 Professional Dark UI
+- Blender/Three.js-inspired dark theme with gradient toolbar and panels
+- Left sidebar with scene object list and render settings
+- Right properties panel with transform and material controls
+- Status bar with real-time feedback
+
+### 🖥️ Real-Time 3D Preview
+- Canvas 2D perspective projection with interactive viewport
+- **Solid mode**: Flat-shaded objects with specular highlights and depth-sorted faces
+- **Wireframe mode**: Transparent wireframe with ellipse rings on spheres
+- Ground grid with colored X/Z axes
+- 3D axes indicator gizmo with arrow tips
+
+### 🎥 Camera Controls
+- **Orbit**: Left mouse drag to rotate around target
+- **Zoom**: Mouse scroll wheel to dolly in/out
+- **Pan**: Right mouse drag or Shift+Left drag to pan
+- Camera state carries directly to the path-traced render
+
+### 📋 Scene Management
+- Add spheres and cubes from toolbar or sidebar buttons
+- Object list with color dots, IOR display, and position info
+- Click to select, inline delete buttons
+- Clear scene and reset camera controls
 
 ### 🔬 Physically-Based Glass Rendering
 - **Snell's Law** refraction with configurable Index of Refraction (1.0 – 2.5)
@@ -19,32 +39,36 @@ A fully interactive, browser-based path tracer specializing in realistic glass r
 - **Frosted glass** support via surface roughness perturbation
 
 ### 🌟 Path Tracing Engine
-- Up to 6 ray bounces for realistic caustics and inter-reflections
+- Configurable ray bounces (3–10) for realistic caustics and inter-reflections
 - Progressive rendering — watch the image refine in real-time
 - Soft shadows from area-like lighting
 - Depth of field with thin lens camera model
 - Gamma-correct tone mapping
+- Render overlay with elapsed time and ETA display
 
-### 🖥️ Clean UI
-- Dark-themed sidebar with object list and property editors
-- Multiple resolution presets (400×300 to 1024×768)
-- Configurable sample counts (64 to 4096)
-- Start/Stop render controls with live sample counter
+### ⚙️ Render Settings
+- Multiple resolution presets (320×240 to 1024×768)
+- Configurable sample counts (32 to 4096)
+- Adjustable bounce depth
+- Preview mode toggle (Solid/Wireframe)
 
 ## Usage
 
 1. Open `index.html` in any modern browser
-2. Add glass objects using the **🔮 Sphere** or **🧊 Cube** buttons
-3. Select objects to adjust position, size, IOR, color tint, and roughness
-4. Choose resolution and sample count in Render Settings
-5. Click **🚀 Render** and watch the image progressively improve
+2. Use the 3D preview to frame your scene — orbit, zoom, and pan the camera
+3. Add glass objects using the toolbar or sidebar **+ Sphere / + Cube** buttons
+4. Select objects to adjust position, size, IOR, color tint, and roughness
+5. Configure resolution, samples, and bounces in Render Settings
+6. Click **▶ Render** and watch the image progressively improve
+7. Use **■ Stop** to halt early or **← Edit** to return to the preview
 
 ## Technical Details
 
 - Pure JavaScript — no WebGL, no libraries, no build step
 - All rendering runs on the CPU via the HTML5 Canvas 2D API
-- Each sample traces one path per pixel with Russian-roulette-style bouncing
+- Each sample traces one path per pixel with physically-based bouncing
 - Accumulation buffer averages samples for noise reduction over time
+- Depth-sorted solid preview with per-face lighting
 
 ## Default Scene
 
