@@ -141,7 +141,7 @@
     border-right: 1px solid var(--border);
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    overflow-y: auto;
   }
 
   .panel-header {
@@ -164,7 +164,7 @@
     gap: 2px;
     padding: 4px 8px 8px;
     overflow-y: auto;
-    max-height: 260px;
+    max-height: 200px;
   }
   .object-item {
     display: flex;
@@ -504,6 +504,51 @@
     padding: 4px 6px;
   }
 
+  /* Focus distance slider in sidebar */
+  .focus-group {
+    padding: 0 14px 12px;
+  }
+  .focus-group label {
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    margin-bottom: 2px;
+    display: block;
+  }
+
+  /* Room selector */
+  .room-selector {
+    padding: 0 14px 12px;
+  }
+  .room-selector label {
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+    display: block;
+  }
+  .room-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+  }
+  .room-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-input);
+    color: var(--text-dim);
+    font-size: 0.7rem;
+    font-family: var(--font);
+    cursor: pointer;
+    transition: all var(--transition);
+    white-space: nowrap;
+  }
+  .room-btn:hover { background: var(--bg-hover); color: var(--text); border-color: var(--border-light); }
+  .room-btn.active { background: rgba(74, 108, 247, 0.15); color: var(--accent); border-color: var(--accent); }
+  .room-btn .room-icon { font-size: 0.9rem; }
+
   /* Scrollbar */
   ::-webkit-scrollbar { width: 5px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -558,6 +603,36 @@
     </div>
 
     <div class="panel-section">
+      <div class="panel-header">Environment</div>
+      <div class="room-selector">
+        <label>Room / Scene</label>
+        <div class="room-grid">
+          <button class="room-btn active" onclick="setRoom('default')" id="room-default"><span class="room-icon">🏠</span> Default</button>
+          <button class="room-btn" onclick="setRoom('cornell')" id="room-cornell"><span class="room-icon">📦</span> Cornell</button>
+          <button class="room-btn" onclick="setRoom('outdoor')" id="room-outdoor"><span class="room-icon">🌤</span> Outdoor</button>
+          <button class="room-btn" onclick="setRoom('studio')" id="room-studio"><span class="room-icon">🎬</span> Studio</button>
+          <button class="room-btn" onclick="setRoom('darkroom')" id="room-darkroom"><span class="room-icon">🌈</span> Neon</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-header">Camera</div>
+      <div class="focus-group">
+        <label>Focus Distance <span class="range-value" id="focus-val">5.0</span></label>
+        <input type="range" id="focus-dist" min="0.5" max="20" step="0.1" value="5.0"
+          oninput="cam.focusDist=parseFloat(this.value); document.getElementById('focus-val').textContent=parseFloat(this.value).toFixed(1); requestPreviewRedraw();">
+        <div class="range-labels"><span>0.5 Near</span><span>20 Far</span></div>
+      </div>
+      <div class="focus-group">
+        <label>Aperture <span class="range-value" id="aperture-val">0.02</span></label>
+        <input type="range" id="aperture" min="0" max="0.3" step="0.005" value="0.02"
+          oninput="cam.aperture=parseFloat(this.value); document.getElementById('aperture-val').textContent=parseFloat(this.value).toFixed(3); requestPreviewRedraw();">
+        <div class="range-labels"><span>0 Sharp</span><span>0.3 Bokeh</span></div>
+      </div>
+    </div>
+
+    <div class="panel-section">
       <div class="panel-header">Render Settings</div>
       <div class="settings-grid">
         <div>
@@ -589,7 +664,7 @@
       <canvas id="render-canvas" class="hidden" width="640" height="480"></canvas>
     </div>
     <div class="viewport-overlay" id="camera-info"></div>
-    <div class="viewport-hint" id="viewport-hint">LMB: Orbit · Scroll: Zoom · RMB/Shift+LMB: Pan</div>
+    <div class="viewport-hint" id="viewport-hint">LMB: Orbit · Scroll: Zoom · RMB/Shift+LMB: Pan · Click object to select</div>
     <div class="progress-bar-wrap hidden" id="progress-wrap">
       <div class="progress-bar" id="progress-bar" style="width:0%"></div>
     </div>
@@ -663,6 +738,7 @@
     <span id="status-text">Ready</span>
   </div>
   <div class="status-item" id="status-objects">Objects: 0</div>
+  <div class="status-item" id="status-room">Room: Default</div>
   <div class="status-item" id="status-samples" style="display:none">Samples: 0/0</div>
 </div>
 
@@ -681,6 +757,7 @@ let maxSamples = 256;
 let accumBuffer = null;
 let animFrame = null;
 let mode = 'edit'; // 'edit' or 'render'
+let currentRoom = 'default';
 
 // --- Camera State ---
 let cam = {
@@ -689,6 +766,8 @@ let cam = {
   dist: 7,         // distance from target
   target: [0, 0.5, 0],
   fov: 0.8,
+  focusDist: 5.0,
+  aperture: 0.02,
 };
 let camDragging = false;
 let camPanning = false;
@@ -699,6 +778,135 @@ const previewCanvas = document.getElementById('preview-canvas');
 const previewCtx = previewCanvas.getContext('2d');
 const renderCanvas = document.getElementById('render-canvas');
 const renderCtx = renderCanvas.getContext('2d');
+
+// ============================================================
+// Room / Environment Definitions
+// ============================================================
+const rooms = {
+  default: {
+    name: 'Default',
+    sky: function(rd) {
+      const t = 0.5 * (rd[1] + 1.0);
+      const sky = vlerp([0.8, 0.85, 0.95], [0.3, 0.5, 0.9], t);
+      const sunDir = vnorm([0.8, 0.6, -0.3]);
+      const sunDot = Math.max(0, vdot(rd, sunDir));
+      const sun = vmul([1, 0.95, 0.85], Math.pow(sunDot, 256) * 8 + Math.pow(sunDot, 32) * 0.5);
+      return vadd(sky, sun);
+    },
+    ground: function(p) {
+      const cx = Math.floor(p[0] + 1000);
+      const cz = Math.floor(p[2] + 1000);
+      return (cx + cz) % 2 === 0 ? [0.85, 0.85, 0.85] : [0.35, 0.35, 0.4];
+    },
+    sunDir: [0.8, 0.6, -0.3],
+    ambient: 0.3,
+    walls: null,
+    bgColor: '#0d0d14',
+    gridColor: 'rgba(60, 60, 80, 0.3)',
+  },
+  cornell: {
+    name: 'Cornell Box',
+    sky: function(rd) {
+      return [0.0, 0.0, 0.0]; // enclosed box, no sky
+    },
+    ground: function(p) {
+      return [0.73, 0.73, 0.73];
+    },
+    sunDir: [0, -1, 0],
+    ambient: 0.05,
+    walls: {
+      size: 4,
+      left: [0.65, 0.05, 0.05],   // red
+      right: [0.12, 0.45, 0.15],   // green
+      back: [0.73, 0.73, 0.73],
+      top: [0.73, 0.73, 0.73],
+      bottom: [0.73, 0.73, 0.73],
+      lightColor: [15, 15, 12],
+      lightSize: 1.0,
+    },
+    bgColor: '#080808',
+    gridColor: 'rgba(80, 60, 60, 0.3)',
+  },
+  outdoor: {
+    name: 'Outdoor',
+    sky: function(rd) {
+      const t = 0.5 * (rd[1] + 1.0);
+      const sky = vlerp([0.95, 0.95, 0.98], [0.15, 0.35, 0.85], Math.pow(t, 0.5));
+      const sunDir = vnorm([0.3, 0.8, -0.2]);
+      const sunDot = Math.max(0, vdot(rd, sunDir));
+      const sun = vmul([1, 0.98, 0.9], Math.pow(sunDot, 512) * 15 + Math.pow(sunDot, 64) * 1.0);
+      const horizon = Math.exp(-Math.abs(rd[1]) * 8) * 0.3;
+      return vadd(vadd(sky, sun), [horizon, horizon * 0.9, horizon * 0.7]);
+    },
+    ground: function(p) {
+      const noise = Math.sin(p[0] * 3.7) * Math.sin(p[2] * 4.1) * 0.05;
+      return [0.25 + noise, 0.45 + noise, 0.15 + noise];
+    },
+    sunDir: [0.3, 0.8, -0.2],
+    ambient: 0.4,
+    walls: null,
+    bgColor: '#0a0e14',
+    gridColor: 'rgba(40, 70, 40, 0.3)',
+  },
+  studio: {
+    name: 'Studio',
+    sky: function(rd) {
+      const t = Math.max(0, rd[1]);
+      return vlerp([0.15, 0.15, 0.18], [0.25, 0.25, 0.3], t);
+    },
+    ground: function(p) {
+      const d = Math.sqrt(p[0]*p[0] + p[2]*p[2]);
+      const v = Math.max(0, 1.0 - d * 0.05);
+      return [0.12 * v + 0.05, 0.12 * v + 0.05, 0.14 * v + 0.06];
+    },
+    sunDir: [0, 0.95, 0.3],
+    ambient: 0.15,
+    walls: null,
+    lights: [
+      { pos: [-3, 4, 2], color: [1.0, 0.95, 0.9], intensity: 8 },
+      { pos: [3, 3, 1], color: [0.8, 0.85, 1.0], intensity: 5 },
+      { pos: [0, 2, -4], color: [1.0, 0.9, 0.8], intensity: 3 },
+    ],
+    bgColor: '#08080c',
+    gridColor: 'rgba(50, 50, 60, 0.25)',
+  },
+  darkroom: {
+    name: 'Neon Room',
+    sky: function(rd) {
+      return [0.01, 0.01, 0.02];
+    },
+    ground: function(p) {
+      const cx = Math.floor(p[0] * 2 + 1000);
+      const cz = Math.floor(p[2] * 2 + 1000);
+      return (cx + cz) % 2 === 0 ? [0.04, 0.04, 0.06] : [0.02, 0.02, 0.03];
+    },
+    sunDir: [0, 1, 0],
+    ambient: 0.02,
+    walls: null,
+    lights: [
+      { pos: [-3, 2, -2], color: [1.0, 0.1, 0.3], intensity: 6 },
+      { pos: [3, 2, -2], color: [0.1, 0.3, 1.0], intensity: 6 },
+      { pos: [0, 3, 2], color: [0.1, 1.0, 0.3], intensity: 4 },
+      { pos: [0, 0.5, -4], color: [1.0, 0.5, 0.0], intensity: 3 },
+    ],
+    bgColor: '#050508',
+    gridColor: 'rgba(40, 20, 60, 0.3)',
+  },
+};
+
+function setRoom(roomId) {
+  currentRoom = roomId;
+  // Update button states
+  document.querySelectorAll('.room-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById('room-' + roomId);
+  if (btn) btn.classList.add('active');
+  document.getElementById('status-room').textContent = 'Room: ' + rooms[roomId].name;
+  requestPreviewRedraw();
+}
+
+function getRoom() {
+  return rooms[currentRoom] || rooms.default;
+}
 
 // --- Camera Math ---
 function getCameraPos() {
@@ -719,7 +927,7 @@ function getCameraMatrix() {
 function updateCameraInfo() {
   const pos = getCameraPos();
   const el = document.getElementById('camera-info');
-  el.textContent = `Camera: (${pos[0].toFixed(1)}, ${pos[1].toFixed(1)}, ${pos[2].toFixed(1)}) → (${cam.target[0].toFixed(1)}, ${cam.target[1].toFixed(1)}, ${cam.target[2].toFixed(1)})`;
+  el.textContent = `Camera: (${pos[0].toFixed(1)}, ${pos[1].toFixed(1)}, ${pos[2].toFixed(1)}) · Focus: ${cam.focusDist.toFixed(1)}`;
 }
 
 function resetCamera() {
@@ -727,6 +935,12 @@ function resetCamera() {
   cam.phi = 0.45;
   cam.dist = 7;
   cam.target = [0, 0.5, 0];
+  cam.focusDist = 5.0;
+  cam.aperture = 0.02;
+  document.getElementById('focus-dist').value = 5.0;
+  document.getElementById('focus-val').textContent = '5.0';
+  document.getElementById('aperture').value = 0.02;
+  document.getElementById('aperture-val').textContent = '0.020';
   updateCameraInfo();
   requestPreviewRedraw();
 }
@@ -736,12 +950,18 @@ previewCanvas.addEventListener('mousedown', (e) => {
   if (mode !== 'edit') return;
   if (e.button === 2 || (e.button === 0 && e.shiftKey)) {
     camPanning = true;
+    camLastX = e.clientX;
+    camLastY = e.clientY;
+    e.preventDefault();
   } else if (e.button === 0) {
+    // Check for click-to-select (will be handled on mouseup if no drag)
     camDragging = true;
+    camLastX = e.clientX;
+    camLastY = e.clientY;
+    cam._clickStartX = e.clientX;
+    cam._clickStartY = e.clientY;
+    e.preventDefault();
   }
-  camLastX = e.clientX;
-  camLastY = e.clientY;
-  e.preventDefault();
 });
 
 window.addEventListener('mousemove', (e) => {
@@ -766,9 +986,19 @@ window.addEventListener('mousemove', (e) => {
   requestPreviewRedraw();
 });
 
-window.addEventListener('mouseup', () => {
+window.addEventListener('mouseup', (e) => {
+  // Click-to-select: if mouse didn't move much, treat as click
+  if (camDragging && cam._clickStartX !== undefined) {
+    const dx = Math.abs(e.clientX - cam._clickStartX);
+    const dy = Math.abs(e.clientY - cam._clickStartY);
+    if (dx < 4 && dy < 4) {
+      handleSceneClick(e);
+    }
+  }
   camDragging = false;
   camPanning = false;
+  cam._clickStartX = undefined;
+  cam._clickStartY = undefined;
 });
 
 previewCanvas.addEventListener('wheel', (e) => {
@@ -781,6 +1011,54 @@ previewCanvas.addEventListener('wheel', (e) => {
 }, { passive: false });
 
 previewCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+// ============================================================
+// Click-to-Select via Raycasting
+// ============================================================
+function handleSceneClick(e) {
+  const rect = previewCanvas.getBoundingClientRect();
+  const mx = (e.clientX - rect.left) * window.devicePixelRatio;
+  const my = (e.clientY - rect.top) * window.devicePixelRatio;
+  const W = previewCanvas.width;
+  const H = previewCanvas.height;
+
+  const camMat = getCameraMatrix();
+  const aspect = W / H;
+  const fov = cam.fov;
+
+  // Convert screen coords to ray direction
+  const u = (2 * mx / W - 1) * fov * aspect;
+  const v = (1 - 2 * my / H) * fov;
+  const rd = vnorm(vadd(vadd(vmul(camMat.right, u), vmul(camMat.up, v)), camMat.fwd));
+  const ro = camMat.pos;
+
+  // Intersect with scene objects only (not ground)
+  let closest = null;
+  let closestT = Infinity;
+
+  for (const obj of sceneObjects) {
+    let hit;
+    if (obj.type === 'sphere') {
+      hit = intersectSphere(ro, rd, [obj.px, obj.py, obj.pz], obj.size);
+    } else {
+      hit = intersectBox(ro, rd, [obj.px, obj.py, obj.pz], obj.size);
+    }
+    if (hit && hit.t < closestT) {
+      closestT = hit.t;
+      closest = obj;
+    }
+  }
+
+  if (closest) {
+    selectObject(closest.id);
+  } else {
+    // Clicked empty space — deselect
+    selectedId = null;
+    hideProps();
+    refreshObjectList();
+    requestPreviewRedraw();
+  }
+}
 
 // --- 3D Preview Rendering ---
 let previewDirty = true;
@@ -816,13 +1094,24 @@ function drawPreview() {
 
   const ctx = previewCtx;
   const camMat = getCameraMatrix();
+  const room = getRoom();
 
-  // Clear
-  ctx.fillStyle = '#0d0d14';
+  // Clear with room-specific background
+  ctx.fillStyle = room.bgColor || '#0d0d14';
   ctx.fillRect(0, 0, W, H);
 
   // Draw grid
   drawGrid(ctx, camMat, W, H);
+
+  // Draw room walls if applicable
+  if (room.walls) {
+    drawRoomWalls(ctx, camMat, W, H, room);
+  }
+
+  // Draw room lights if applicable
+  if (room.lights) {
+    drawRoomLights(ctx, camMat, W, H, room);
+  }
 
   // Draw objects
   for (const obj of sceneObjects) {
@@ -834,12 +1123,163 @@ function drawPreview() {
     }
   }
 
+  // Draw focus plane indicator
+  drawFocusIndicator(ctx, camMat, W, H);
+
   // Draw axes indicator
   drawAxesIndicator(ctx, camMat, W, H);
 }
 
+// ============================================================
+// Focus Plane Indicator
+// ============================================================
+function drawFocusIndicator(ctx, camMat, W, H) {
+  const focusDist = cam.focusDist;
+  const focusCenter = vadd(camMat.pos, vmul(camMat.fwd, focusDist));
+
+  // Draw a diamond/crosshair at the focus point
+  const cp = project3D(focusCenter, camMat, W, H);
+  if (!cp) return;
+
+  // Draw a ring at the focus distance
+  const ringRadius = 1.2;
+  const segments = 48;
+  ctx.strokeStyle = 'rgba(255, 200, 50, 0.4)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([6, 4]);
+  ctx.beginPath();
+  let started = false;
+  for (let i = 0; i <= segments; i++) {
+    const angle = (i / segments) * Math.PI * 2;
+    const pt = vadd(focusCenter, vadd(
+      vmul(camMat.right, Math.cos(angle) * ringRadius),
+      vmul(camMat.up, Math.sin(angle) * ringRadius)
+    ));
+    const sp = project3D(pt, camMat, W, H);
+    if (sp) {
+      if (!started) { ctx.moveTo(sp[0], sp[1]); started = true; }
+      else ctx.lineTo(sp[0], sp[1]);
+    }
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Draw crosshair at center
+  const crossSize = 12;
+  ctx.strokeStyle = 'rgba(255, 200, 50, 0.7)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(cp[0] - crossSize, cp[1]);
+  ctx.lineTo(cp[0] + crossSize, cp[1]);
+  ctx.moveTo(cp[0], cp[1] - crossSize);
+  ctx.lineTo(cp[0], cp[1] + crossSize);
+  ctx.stroke();
+
+  // Small circle
+  ctx.beginPath();
+  ctx.arc(cp[0], cp[1], 4, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Label
+  ctx.fillStyle = 'rgba(255, 200, 50, 0.6)';
+  ctx.font = '10px sans-serif';
+  ctx.fillText(`f:${focusDist.toFixed(1)}`, cp[0] + 8, cp[1] - 8);
+}
+
+// ============================================================
+// Room Wall Drawing (Preview)
+// ============================================================
+function drawRoomWalls(ctx, camMat, W, H, room) {
+  const s = room.walls.size;
+  // Draw back wall
+  const wallAlpha = 0.15;
+  const wallPts = [
+    project3D([-s, 0, -s], camMat, W, H),
+    project3D([s, 0, -s], camMat, W, H),
+    project3D([s, s*2, -s], camMat, W, H),
+    project3D([-s, s*2, -s], camMat, W, H),
+  ];
+  drawWallQuad(ctx, wallPts, room.walls.back, wallAlpha);
+
+  // Left wall (red in cornell)
+  const leftPts = [
+    project3D([-s, 0, -s], camMat, W, H),
+    project3D([-s, 0, s], camMat, W, H),
+    project3D([-s, s*2, s], camMat, W, H),
+    project3D([-s, s*2, -s], camMat, W, H),
+  ];
+  drawWallQuad(ctx, leftPts, room.walls.left, wallAlpha);
+
+  // Right wall (green in cornell)
+  const rightPts = [
+    project3D([s, 0, -s], camMat, W, H),
+    project3D([s, 0, s], camMat, W, H),
+    project3D([s, s*2, s], camMat, W, H),
+    project3D([s, s*2, -s], camMat, W, H),
+  ];
+  drawWallQuad(ctx, rightPts, room.walls.right, wallAlpha);
+
+  // Ceiling
+  const topPts = [
+    project3D([-s, s*2, -s], camMat, W, H),
+    project3D([s, s*2, -s], camMat, W, H),
+    project3D([s, s*2, s], camMat, W, H),
+    project3D([-s, s*2, s], camMat, W, H),
+  ];
+  drawWallQuad(ctx, topPts, room.walls.top, wallAlpha * 0.7);
+
+  // Light on ceiling
+  if (room.walls.lightSize) {
+    const ls = room.walls.lightSize;
+    const lightPts = [
+      project3D([-ls, s*2 - 0.01, -ls], camMat, W, H),
+      project3D([ls, s*2 - 0.01, -ls], camMat, W, H),
+      project3D([ls, s*2 - 0.01, ls], camMat, W, H),
+      project3D([-ls, s*2 - 0.01, ls], camMat, W, H),
+    ];
+    drawWallQuad(ctx, lightPts, [1, 1, 0.9], 0.6);
+  }
+}
+
+function drawWallQuad(ctx, pts, color, alpha) {
+  const valid = pts.filter(Boolean);
+  if (valid.length < 3) return;
+  ctx.fillStyle = `rgba(${Math.round(color[0]*255)},${Math.round(color[1]*255)},${Math.round(color[2]*255)},${alpha})`;
+  ctx.beginPath();
+  ctx.moveTo(valid[0][0], valid[0][1]);
+  for (let i = 1; i < valid.length; i++) ctx.lineTo(valid[i][0], valid[i][1]);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = `rgba(${Math.round(color[0]*255)},${Math.round(color[1]*255)},${Math.round(color[2]*255)},${alpha * 1.5})`;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+}
+
+function drawRoomLights(ctx, camMat, W, H, room) {
+  for (const light of room.lights) {
+    const lp = project3D(light.pos, camMat, W, H);
+    if (!lp) continue;
+    const c = light.color;
+    const r = Math.max(4, 20 / lp[2]);
+    // Glow
+    const grad = ctx.createRadialGradient(lp[0], lp[1], 0, lp[0], lp[1], r * 3);
+    grad.addColorStop(0, `rgba(${Math.round(c[0]*255)},${Math.round(c[1]*255)},${Math.round(c[2]*255)},0.5)`);
+    grad.addColorStop(1, `rgba(${Math.round(c[0]*255)},${Math.round(c[1]*255)},${Math.round(c[2]*255)},0)`);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(lp[0], lp[1], r * 3, 0, Math.PI * 2);
+    ctx.fill();
+    // Core
+    ctx.fillStyle = `rgba(${Math.round(c[0]*255)},${Math.round(c[1]*255)},${Math.round(c[2]*255)},0.9)`;
+    ctx.beginPath();
+    ctx.arc(lp[0], lp[1], r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 function drawGrid(ctx, camMat, W, H) {
-  ctx.strokeStyle = 'rgba(60, 60, 80, 0.3)';
+  const room = getRoom();
+  ctx.strokeStyle = room.gridColor || 'rgba(60, 60, 80, 0.3)';
   ctx.lineWidth = 1;
   const gridSize = 10;
   const step = 1;
@@ -865,14 +1305,12 @@ function drawGrid(ctx, camMat, W, H) {
 
   // Center axes on grid
   ctx.lineWidth = 1.5;
-  // X axis (red)
   const ax1 = project3D([-gridSize, 0, 0], camMat, W, H);
   const ax2 = project3D([gridSize, 0, 0], camMat, W, H);
   if (ax1 && ax2) {
     ctx.strokeStyle = 'rgba(248, 113, 113, 0.5)';
     ctx.beginPath(); ctx.moveTo(ax1[0], ax1[1]); ctx.lineTo(ax2[0], ax2[1]); ctx.stroke();
   }
-  // Z axis (blue)
   const az1 = project3D([0, 0, -gridSize], camMat, W, H);
   const az2 = project3D([0, 0, gridSize], camMat, W, H);
   if (az1 && az2) {
@@ -886,44 +1324,40 @@ function drawSpherePreview(ctx, camMat, W, H, obj, selected) {
   const cp = project3D(center, camMat, W, H);
   if (!cp) return;
 
-  // Approximate screen radius
   const edgePoint = vadd(center, vmul(getCameraMatrix().right, obj.size));
   const ep = project3D(edgePoint, camMat, W, H);
   if (!ep) return;
   const screenR = Math.sqrt((ep[0]-cp[0])**2 + (ep[1]-cp[1])**2);
 
-  // Draw wireframe circles
   const tint = obj.color || '#ffffff';
   const alpha = selected ? 0.9 : 0.5;
 
-  // Fill with transparent tint
   ctx.fillStyle = hexToRGBA(tint, selected ? 0.15 : 0.08);
   ctx.beginPath();
   ctx.arc(cp[0], cp[1], screenR, 0, Math.PI * 2);
   ctx.fill();
 
-  // Wireframe circles (3 rings)
   ctx.strokeStyle = hexToRGBA(tint, alpha);
   ctx.lineWidth = selected ? 2 : 1;
-
-  // Main circle
   ctx.beginPath();
   ctx.arc(cp[0], cp[1], screenR, 0, Math.PI * 2);
   ctx.stroke();
 
-  // Latitude ring
   drawEllipseRing(ctx, camMat, W, H, center, obj.size, [0,1,0], alpha, tint);
-  // Longitude ring
   drawEllipseRing(ctx, camMat, W, H, center, obj.size, getCameraMatrix().right, alpha, tint);
 
   if (selected) {
-    ctx.strokeStyle = 'rgba(74, 108, 247, 0.8)';
-    ctx.lineWidth = 2;
+    // Selection glow
+    ctx.shadowColor = 'rgba(74, 108, 247, 0.6)';
+    ctx.shadowBlur = 12;
+    ctx.strokeStyle = 'rgba(74, 108, 247, 0.9)';
+    ctx.lineWidth = 2.5;
     ctx.setLineDash([4, 4]);
     ctx.beginPath();
-    ctx.arc(cp[0], cp[1], screenR + 4, 0, Math.PI * 2);
+    ctx.arc(cp[0], cp[1], screenR + 5, 0, Math.PI * 2);
     ctx.stroke();
     ctx.setLineDash([]);
+    ctx.shadowBlur = 0;
   }
 }
 
@@ -960,7 +1394,6 @@ function drawCubePreview(ctx, camMat, W, H, obj, selected) {
   const tint = obj.color || '#ffffff';
   const alpha = selected ? 0.9 : 0.5;
 
-  // 8 corners
   const corners = [
     [-1,-1,-1], [1,-1,-1], [1,1,-1], [-1,1,-1],
     [-1,-1,1], [1,-1,1], [1,1,1], [-1,1,1]
@@ -968,14 +1401,12 @@ function drawCubePreview(ctx, camMat, W, H, obj, selected) {
 
   const projected = corners.map(p => project3D(p, camMat, W, H));
 
-  // 12 edges
   const edges = [
     [0,1],[1,2],[2,3],[3,0],
     [4,5],[5,6],[6,7],[7,4],
     [0,4],[1,5],[2,6],[3,7]
   ];
 
-  // Fill faces with transparent tint
   const faces = [
     [0,1,2,3], [4,5,6,7], [0,1,5,4], [2,3,7,6], [0,3,7,4], [1,2,6,5]
   ];
@@ -991,7 +1422,6 @@ function drawCubePreview(ctx, camMat, W, H, obj, selected) {
     }
   }
 
-  // Draw edges
   ctx.strokeStyle = hexToRGBA(tint, alpha);
   ctx.lineWidth = selected ? 2 : 1;
   for (const [a, b] of edges) {
@@ -1004,9 +1434,10 @@ function drawCubePreview(ctx, camMat, W, H, obj, selected) {
   }
 
   if (selected) {
-    // Selection highlight
-    ctx.strokeStyle = 'rgba(74, 108, 247, 0.8)';
-    ctx.lineWidth = 2;
+    ctx.shadowColor = 'rgba(74, 108, 247, 0.6)';
+    ctx.shadowBlur = 12;
+    ctx.strokeStyle = 'rgba(74, 108, 247, 0.9)';
+    ctx.lineWidth = 2.5;
     ctx.setLineDash([4, 4]);
     for (const [a, b] of edges) {
       if (projected[a] && projected[b]) {
@@ -1017,6 +1448,7 @@ function drawCubePreview(ctx, camMat, W, H, obj, selected) {
       }
     }
     ctx.setLineDash([]);
+    ctx.shadowBlur = 0;
   }
 }
 
@@ -1325,13 +1757,15 @@ function intersectPlane(ro, rd, y) {
 }
 
 // ============================================================
-// Scene Intersection
+// Scene Intersection (with room walls)
 // ============================================================
 function intersectScene(ro, rd, objects) {
   let closest = null;
   let closestT = Infinity;
   let hitObj = null;
+  const room = getRoom();
 
+  // Ground plane
   const gnd = intersectPlane(ro, rd, 0);
   if (gnd && gnd.t < closestT) {
     closestT = gnd.t;
@@ -1339,6 +1773,56 @@ function intersectScene(ro, rd, objects) {
     hitObj = { type: 'ground' };
   }
 
+  // Room walls (Cornell box etc.)
+  if (room.walls) {
+    const s = room.walls.size;
+    // Back wall (z = -s)
+    const backHit = intersectWallPlane(ro, rd, 2, -s, [-s, s], [0, s*2]);
+    if (backHit && backHit.t < closestT) {
+      closestT = backHit.t; closest = backHit;
+      closest.n = [0, 0, 1];
+      hitObj = { type: 'wall', wallColor: room.walls.back };
+    }
+    // Left wall (x = -s)
+    const leftHit = intersectWallPlane(ro, rd, 0, -s, [-s, s], [0, s*2]);
+    if (leftHit && leftHit.t < closestT) {
+      closestT = leftHit.t; closest = leftHit;
+      closest.n = [1, 0, 0];
+      hitObj = { type: 'wall', wallColor: room.walls.left };
+    }
+    // Right wall (x = s)
+    const rightHit = intersectWallPlane(ro, rd, 0, s, [-s, s], [0, s*2]);
+    if (rightHit && rightHit.t < closestT) {
+      closestT = rightHit.t; closest = rightHit;
+      closest.n = [-1, 0, 0];
+      hitObj = { type: 'wall', wallColor: room.walls.right };
+    }
+    // Ceiling (y = s*2)
+    const ceilHit = intersectCeilingPlane(ro, rd, s*2, [-s, s], [-s, s]);
+    if (ceilHit && ceilHit.t < closestT) {
+      // Check if it's the light
+      const lp = ceilHit.p;
+      const ls = room.walls.lightSize || 0;
+      if (Math.abs(lp[0]) < ls && Math.abs(lp[2]) < ls) {
+        closestT = ceilHit.t; closest = ceilHit;
+        closest.n = [0, -1, 0];
+        hitObj = { type: 'light', lightColor: room.walls.lightColor };
+      } else {
+        closestT = ceilHit.t; closest = ceilHit;
+        closest.n = [0, -1, 0];
+        hitObj = { type: 'wall', wallColor: room.walls.top };
+      }
+    }
+    // Front wall (z = s) — behind camera usually
+    const frontHit = intersectWallPlane(ro, rd, 2, s, [-s, s], [0, s*2]);
+    if (frontHit && frontHit.t < closestT) {
+      closestT = frontHit.t; closest = frontHit;
+      closest.n = [0, 0, -1];
+      hitObj = { type: 'wall', wallColor: room.walls.back };
+    }
+  }
+
+  // Scene objects
   for (const obj of objects) {
     let hit;
     if (obj.type === 'sphere') {
@@ -1354,6 +1838,29 @@ function intersectScene(ro, rd, objects) {
   }
 
   return closest ? { ...closest, obj: hitObj } : null;
+}
+
+function intersectWallPlane(ro, rd, axis, val, range1, range2) {
+  // axis: 0=x, 1=y, 2=z
+  if (Math.abs(rd[axis]) < 1e-8) return null;
+  const t = (val - ro[axis]) / rd[axis];
+  if (t < 0.001) return null;
+  const p = vadd(ro, vmul(rd, t));
+  // Check bounds
+  const otherAxes = [0,1,2].filter(a => a !== axis);
+  if (p[otherAxes[0]] < range1[0] || p[otherAxes[0]] > range1[1]) return null;
+  if (p[otherAxes[1]] < range2[0] || p[otherAxes[1]] > range2[1]) return null;
+  return { t, p, n: [0,0,0] };
+}
+
+function intersectCeilingPlane(ro, rd, y, xRange, zRange) {
+  if (Math.abs(rd[1]) < 1e-8) return null;
+  const t = (y - ro[1]) / rd[1];
+  if (t < 0.001) return null;
+  const p = vadd(ro, vmul(rd, t));
+  if (p[0] < xRange[0] || p[0] > xRange[1]) return null;
+  if (p[2] < zRange[0] || p[2] > zRange[1]) return null;
+  return { t, p, n: [0, -1, 0] };
 }
 
 // ============================================================
@@ -1375,27 +1882,18 @@ function refract(uv, n, etaiOverEtat) {
 }
 
 // ============================================================
-// Sky & Ground
+// Sky & Ground (room-aware)
 // ============================================================
 function skyColor(rd) {
-  const t = 0.5 * (rd[1] + 1.0);
-  const sky = vlerp([0.8, 0.85, 0.95], [0.3, 0.5, 0.9], t);
-  const sunDir = vnorm([0.8, 0.6, -0.3]);
-  const sunDot = Math.max(0, vdot(rd, sunDir));
-  const sun = vmul([1, 0.95, 0.85], Math.pow(sunDot, 256) * 8 + Math.pow(sunDot, 32) * 0.5);
-  return vadd(sky, sun);
+  return getRoom().sky(rd);
 }
 
 function groundColor(p) {
-  const scale = 1.0;
-  const cx = Math.floor(p[0] * scale + 1000);
-  const cz = Math.floor(p[2] * scale + 1000);
-  const checker = (cx + cz) % 2 === 0;
-  return checker ? [0.85, 0.85, 0.85] : [0.35, 0.35, 0.4];
+  return getRoom().ground(p);
 }
 
 // ============================================================
-// Path Trace
+// Path Trace (room-aware with lights)
 // ============================================================
 function trace(ro, rd, objects, depth) {
   if (depth <= 0) return [0, 0, 0];
@@ -1404,22 +1902,84 @@ function trace(ro, rd, objects, depth) {
   if (!hit) return skyColor(rd);
 
   const { p, n, obj } = hit;
+  const room = getRoom();
 
+  // Light source hit
+  if (obj.type === 'light') {
+    return obj.lightColor || [15, 15, 12];
+  }
+
+  // Wall hit
+  if (obj.type === 'wall') {
+    const albedo = obj.wallColor;
+    let light = room.ambient;
+
+    if (room.walls && room.walls.lightColor) {
+      // Direct light from ceiling light
+      const lightPos = [0, room.walls.size * 2 - 0.01, 0];
+      const toLight = vsub(lightPos, p);
+      const lightDir = vnorm(toLight);
+      const lightDist = vlen(toLight);
+      const shadowHit = intersectScene(vadd(p, vmul(n, 0.001)), lightDir, objects);
+      if (!shadowHit || shadowHit.t > lightDist || shadowHit.obj.type === 'light') {
+        light += Math.max(0, vdot(n, lightDir)) * 0.8;
+      }
+    }
+
+    // Point lights
+    if (room.lights) {
+      for (const lt of room.lights) {
+        const toLight = vsub(lt.pos, p);
+        const lightDir = vnorm(toLight);
+        const lightDist = vlen(toLight);
+        const shadowHit = intersectScene(vadd(p, vmul(n, 0.001)), lightDir, objects);
+        if (!shadowHit || shadowHit.t > lightDist) {
+          const atten = lt.intensity / (lightDist * lightDist);
+          const ndotl = Math.max(0, vdot(n, lightDir));
+          light += ndotl * atten;
+          // Add colored light contribution
+          return vadd(vmul(albedo, light), vmulv(albedo, vmul(lt.color, ndotl * atten * 0.5)));
+        }
+      }
+    }
+
+    const bounceDir = randomOnHemisphere(n);
+    const indirect = trace(vadd(p, vmul(n, 0.001)), bounceDir, objects, depth - 1);
+    return vadd(vmul(albedo, light), vmulv(albedo, vmul(indirect, 0.2)));
+  }
+
+  // Ground
   if (obj.type === 'ground') {
     const albedo = groundColor(p);
-    const sunDir = vnorm([0.8, 0.6, -0.3]);
+    const sunDir = vnorm(room.sunDir || [0.8, 0.6, -0.3]);
     const shadowHit = intersectScene(vadd(p, vmul(n, 0.001)), sunDir, objects);
-    let light;
-    if (shadowHit && shadowHit.obj.type !== 'ground') {
-      light = 0.3;
-    } else {
-      light = 0.3 + 0.7 * Math.max(0, vdot(n, sunDir));
+    let light = room.ambient || 0.3;
+
+    if (!shadowHit || shadowHit.obj.type === 'ground') {
+      light += (1.0 - (room.ambient || 0.3)) * Math.max(0, vdot(n, sunDir));
     }
+
+    // Point lights contribution
+    if (room.lights) {
+      for (const lt of room.lights) {
+        const toLight = vsub(lt.pos, p);
+        const lightDir = vnorm(toLight);
+        const lightDist = vlen(toLight);
+        const sh = intersectScene(vadd(p, vmul(n, 0.001)), lightDir, objects);
+        if (!sh || sh.t > lightDist) {
+          const atten = lt.intensity / (lightDist * lightDist);
+          const ndotl = Math.max(0, vdot(n, lightDir));
+          return vadd(vmul(albedo, light), vmulv(albedo, vmul(lt.color, ndotl * atten)));
+        }
+      }
+    }
+
     const bounceDir = randomOnHemisphere(n);
     const indirect = trace(vadd(p, vmul(n, 0.001)), bounceDir, objects, depth - 1);
     return vadd(vmul(albedo, light), vmulv(albedo, vmul(indirect, 0.15)));
   }
 
+  // Glass object
   const tint = hexToRgb(obj.color);
   const roughness = obj.roughness || 0;
 
@@ -1503,11 +2063,10 @@ function renderLoop() {
   const H = renderCanvas.height;
   const objects = sceneObjects;
 
-  // Camera from preview
   const { pos: camPos, fwd: camFwd, right: camRight, up: camUp } = getCameraMatrix();
   const fov = cam.fov;
-  const aperture = 0.02;
-  const focusDist = vlen(vsub(cam.target, camPos));
+  const aperture = cam.aperture;
+  const focusDist = cam.focusDist;
 
   const samplesPerFrame = 1;
   rngState = sampleCount * 73856093 + 19349663;
@@ -1575,7 +2134,7 @@ function renderLoop() {
 // ============================================================
 // CSS helper for hidden class
 // ============================================================
-// Using CSS class .hidden { display: none } via inline styles already handled
+document.head.insertAdjacentHTML('beforeend', '<style>.hidden{display:none!important}</style>');
 
 // ============================================================
 // Init
@@ -1585,9 +2144,6 @@ function initDefaultScene() {
   addObject('cube', { px: -1.8, py: 0.6, pz: -1.5, size: 0.6, ior: 1.45, color: '#ffe8f0', roughness: 0.02 });
   addObject('sphere', { px: 1.5, py: 0.5, pz: -1.2, size: 0.5, ior: 2.0, color: '#f0ffe8', roughness: 0 });
 }
-
-// Add hidden class support
-document.head.insertAdjacentHTML('beforeend', '<style>.hidden{display:none!important}</style>');
 
 initDefaultScene();
 updateCameraInfo();
