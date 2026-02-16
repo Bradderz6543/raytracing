@@ -183,7 +183,7 @@
     gap: 1px;
     padding: 4px 6px 8px;
     overflow-y: auto;
-    max-height: 240px;
+    max-height: 200px;
   }
   .object-item {
     display: flex;
@@ -603,6 +603,60 @@
     grid-column: 1 / -1;
   }
 
+  /* Focus distance slider in settings */
+  .focus-slider-wrap {
+    grid-column: 1 / -1;
+    margin-top: 2px;
+  }
+  .focus-slider-wrap label {
+    font-size: 0.6rem;
+    color: var(--text-dim);
+    margin-bottom: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .focus-slider-wrap .focus-val {
+    font-family: var(--font-mono);
+    color: var(--accent);
+    font-size: 0.62rem;
+    font-weight: 600;
+  }
+
+  /* Room selector */
+  .room-selector-wrap {
+    padding: 0 10px 10px;
+  }
+  .room-selector-wrap label {
+    font-size: 0.6rem;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+    display: block;
+  }
+  .room-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 3px;
+  }
+  .room-option {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 7px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-input);
+    color: var(--text-dim);
+    font-size: 0.65rem;
+    font-family: var(--font);
+    cursor: pointer;
+    transition: all var(--transition);
+  }
+  .room-option:hover { background: var(--bg-hover); color: var(--text); border-color: var(--border-light); }
+  .room-option.active { background: var(--accent-subtle); border-color: var(--accent); color: var(--text); }
+  .room-option .room-emoji { font-size: 0.8rem; }
+  .room-option.wide { grid-column: 1 / -1; }
+
   /* Scrollbar */
   ::-webkit-scrollbar { width: 4px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -620,6 +674,9 @@
   }
 
   .hidden { display: none !important; }
+
+  /* Sidebar scrollable */
+  #sidebar { overflow-y: auto; }
 </style>
 </head>
 <body>
@@ -650,6 +707,30 @@
 
   <!-- LEFT SIDEBAR -->
   <div id="sidebar">
+    <!-- Room / Environment Selector -->
+    <div class="panel-section">
+      <div class="panel-header">Environment</div>
+      <div class="room-selector-wrap">
+        <div class="room-grid" id="room-grid">
+          <div class="room-option active" data-room="default" onclick="selectRoom('default')">
+            <span class="room-emoji">🏠</span> Default
+          </div>
+          <div class="room-option" data-room="cornell" onclick="selectRoom('cornell')">
+            <span class="room-emoji">📦</span> Cornell Box
+          </div>
+          <div class="room-option" data-room="opensky" onclick="selectRoom('opensky')">
+            <span class="room-emoji">☀️</span> Open Sky
+          </div>
+          <div class="room-option" data-room="studio" onclick="selectRoom('studio')">
+            <span class="room-emoji">🎬</span> Studio
+          </div>
+          <div class="room-option wide" data-room="darkroom" onclick="selectRoom('darkroom')">
+            <span class="room-emoji">🌈</span> Dark Room + Colored Lights
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="panel-section">
       <div class="panel-header">
         Scene Objects
@@ -709,6 +790,11 @@
             <option value="solid" selected>Solid</option>
           </select>
         </div>
+        <div class="focus-slider-wrap">
+          <label>Focus Distance <span class="focus-val" id="focus-val">auto</span></label>
+          <input type="range" id="focus-dist" min="0.5" max="30" step="0.1" value="0" oninput="updateFocusDist(this.value)">
+          <div class="range-labels"><span>0.5 Near</span><span>Auto</span><span>30 Far</span></div>
+        </div>
       </div>
     </div>
 
@@ -722,7 +808,7 @@
       <canvas id="render-canvas" class="hidden" width="640" height="480"></canvas>
     </div>
     <div class="viewport-overlay" id="camera-info"></div>
-    <div class="viewport-hint" id="viewport-hint">LMB: Orbit · Scroll: Zoom · RMB/Shift+LMB: Pan</div>
+    <div class="viewport-hint" id="viewport-hint">LMB: Orbit · Scroll: Zoom · RMB/Shift+LMB: Pan · Click object to select</div>
     <div class="progress-bar-wrap hidden" id="progress-wrap">
       <div class="progress-bar" id="progress-bar" style="width:0%"></div>
     </div>
@@ -805,6 +891,7 @@
     <span id="status-text">Ready</span>
   </div>
   <div class="status-item" id="status-objects">Objects: 0</div>
+  <div class="status-item" id="status-room">Room: Default</div>
   <div class="status-item" id="status-samples" style="display:none">Samples: 0/0</div>
   <div class="status-item" id="status-time" style="display:none"></div>
 </div>
@@ -826,6 +913,8 @@ let accumBuffer = null;
 let animFrame = null;
 let appMode = 'edit'; // 'edit' or 'render'
 let renderStartTime = 0;
+let currentRoom = 'default';
+let customFocusDist = 0; // 0 = auto (use camera target distance)
 
 // --- Camera State ---
 let cam = {
@@ -838,12 +927,213 @@ let cam = {
 let camDragging = false;
 let camPanning = false;
 let camLastX = 0, camLastY = 0;
+let clickStartX = 0, clickStartY = 0;
+let clickMoved = false;
 
 // --- Canvases ---
 const previewCanvas = document.getElementById('preview-canvas');
 const previewCtx = previewCanvas.getContext('2d');
 const renderCanvas = document.getElementById('render-canvas');
 const renderCtx = renderCanvas.getContext('2d');
+
+// ============================================================
+// Room / Environment Presets
+// ============================================================
+const roomPresets = {
+  default: {
+    name: 'Default',
+    sky: (rd) => {
+      const t = 0.5 * (rd[1] + 1.0);
+      const sky = vlerp([0.8, 0.85, 0.95], [0.3, 0.5, 0.9], t);
+      const sunDir = vnorm([0.8, 0.6, -0.3]);
+      const sunDot = Math.max(0, vdot(rd, sunDir));
+      const sun = vmul([1, 0.95, 0.85], Math.pow(sunDot, 256) * 8 + Math.pow(sunDot, 32) * 0.5);
+      return vadd(sky, sun);
+    },
+    ground: (p) => {
+      const cx = Math.floor(p[0] + 1000);
+      const cz = Math.floor(p[2] + 1000);
+      return (cx + cz) % 2 === 0 ? [0.85, 0.85, 0.85] : [0.35, 0.35, 0.4];
+    },
+    sunDir: [0.8, 0.6, -0.3],
+    sunIntensity: 1.0,
+    ambientLight: 0.3,
+    walls: null,
+    lights: null,
+    bgGradient: ['#12121e', '#0d0d16', '#0a0a12'],
+    gridColor: 'rgba(50, 50, 70, 0.15)',
+    defaultObjects: [
+      { type: 'sphere', px: 0, py: 0.8, pz: -2, size: 0.8, ior: 1.52, color: '#e8f0ff', roughness: 0 },
+      { type: 'cube', px: -1.8, py: 0.6, pz: -1.5, size: 0.6, ior: 1.45, color: '#ffe8f0', roughness: 0.02 },
+      { type: 'sphere', px: 1.5, py: 0.5, pz: -1.2, size: 0.5, ior: 2.0, color: '#f0ffe8', roughness: 0 },
+    ]
+  },
+  cornell: {
+    name: 'Cornell Box',
+    sky: () => [0, 0, 0],
+    ground: () => [0.73, 0.73, 0.73],
+    sunDir: [0, -1, 0],
+    sunIntensity: 0,
+    ambientLight: 0.05,
+    walls: {
+      size: 5,
+      left: [0.65, 0.05, 0.05],   // red
+      right: [0.12, 0.45, 0.15],   // green
+      back: [0.73, 0.73, 0.73],
+      top: [0.73, 0.73, 0.73],
+      floor: [0.73, 0.73, 0.73],
+    },
+    lights: [
+      { pos: [0, 4.9, -2.5], color: [15, 15, 13], radius: 1.2 }
+    ],
+    bgGradient: ['#0a0808', '#080606', '#060404'],
+    gridColor: 'rgba(80, 50, 50, 0.15)',
+    defaultObjects: [
+      { type: 'sphere', px: -1.2, py: 1.0, pz: -3, size: 1.0, ior: 1.52, color: '#ffffff', roughness: 0 },
+      { type: 'cube', px: 1.3, py: 0.8, pz: -1.8, size: 0.8, ior: 1.5, color: '#ffffff', roughness: 0 },
+    ]
+  },
+  opensky: {
+    name: 'Open Sky',
+    sky: (rd) => {
+      const t = 0.5 * (rd[1] + 1.0);
+      const sky = vlerp([0.95, 0.95, 1.0], [0.2, 0.4, 0.95], t * t);
+      const sunDir = vnorm([0.3, 0.85, 0.1]);
+      const sunDot = Math.max(0, vdot(rd, sunDir));
+      const sun = vmul([1, 0.98, 0.9], Math.pow(sunDot, 512) * 15 + Math.pow(sunDot, 64) * 1.5);
+      const horizon = Math.exp(-Math.abs(rd[1]) * 8);
+      const haze = vmul([0.9, 0.85, 0.8], horizon * 0.3);
+      return vadd(vadd(sky, sun), haze);
+    },
+    ground: (p) => {
+      const cx = Math.floor(p[0] * 0.5 + 1000);
+      const cz = Math.floor(p[2] * 0.5 + 1000);
+      return (cx + cz) % 2 === 0 ? [0.4, 0.55, 0.3] : [0.35, 0.5, 0.25];
+    },
+    sunDir: [0.3, 0.85, 0.1],
+    sunIntensity: 1.5,
+    ambientLight: 0.4,
+    walls: null,
+    lights: null,
+    bgGradient: ['#1a2030', '#101828', '#0a1020'],
+    gridColor: 'rgba(50, 70, 50, 0.15)',
+    defaultObjects: [
+      { type: 'sphere', px: 0, py: 1.2, pz: -2, size: 1.2, ior: 1.52, color: '#e0f0ff', roughness: 0 },
+      { type: 'sphere', px: -2.5, py: 0.6, pz: -1, size: 0.6, ior: 1.8, color: '#ffe0e0', roughness: 0 },
+      { type: 'sphere', px: 2.2, py: 0.4, pz: -0.5, size: 0.4, ior: 2.4, color: '#e0ffe0', roughness: 0 },
+      { type: 'cube', px: 3.5, py: 0.5, pz: -3, size: 0.5, ior: 1.45, color: '#e0e0ff', roughness: 0.01 },
+    ]
+  },
+  studio: {
+    name: 'Studio Lighting',
+    sky: (rd) => {
+      return vmul([0.15, 0.15, 0.18], 1.0);
+    },
+    ground: (p) => {
+      const d = Math.sqrt(p[0]*p[0] + p[2]*p[2]);
+      const v = Math.max(0, 1 - d * 0.05);
+      return [0.2 * v + 0.05, 0.2 * v + 0.05, 0.22 * v + 0.06];
+    },
+    sunDir: [0, 1, 0],
+    sunIntensity: 0,
+    ambientLight: 0.15,
+    walls: null,
+    lights: [
+      { pos: [-4, 5, 2], color: [8, 8, 9], radius: 1.5 },
+      { pos: [4, 4, -1], color: [6, 5, 4], radius: 1.0 },
+      { pos: [0, 3, -6], color: [3, 3, 5], radius: 2.0 },
+    ],
+    bgGradient: ['#101015', '#0c0c10', '#08080c'],
+    gridColor: 'rgba(60, 60, 80, 0.12)',
+    defaultObjects: [
+      { type: 'sphere', px: 0, py: 1.0, pz: -2, size: 1.0, ior: 1.52, color: '#ffffff', roughness: 0 },
+      { type: 'cube', px: -2, py: 0.7, pz: -1, size: 0.7, ior: 1.7, color: '#ffd0d0', roughness: 0 },
+      { type: 'sphere', px: 2, py: 0.5, pz: -1.5, size: 0.5, ior: 2.0, color: '#d0d0ff', roughness: 0.03 },
+    ]
+  },
+  darkroom: {
+    name: 'Dark Room + Colored Lights',
+    sky: () => [0.01, 0.01, 0.02],
+    ground: () => [0.08, 0.08, 0.1],
+    sunDir: [0, 1, 0],
+    sunIntensity: 0,
+    ambientLight: 0.02,
+    walls: {
+      size: 6,
+      left: [0.1, 0.1, 0.12],
+      right: [0.1, 0.1, 0.12],
+      back: [0.1, 0.1, 0.12],
+      top: [0.08, 0.08, 0.1],
+      floor: [0.08, 0.08, 0.1],
+    },
+    lights: [
+      { pos: [-3, 4, -1], color: [12, 1, 1], radius: 0.5 },    // red
+      { pos: [3, 4, -1], color: [1, 1, 12], radius: 0.5 },     // blue
+      { pos: [0, 4, -4], color: [1, 10, 1], radius: 0.5 },     // green
+      { pos: [0, 4.5, 0], color: [5, 3, 8], radius: 0.8 },     // purple
+    ],
+    bgGradient: ['#060408', '#040306', '#020204'],
+    gridColor: 'rgba(40, 30, 60, 0.15)',
+    defaultObjects: [
+      { type: 'sphere', px: 0, py: 1.0, pz: -2.5, size: 1.0, ior: 1.52, color: '#ffffff', roughness: 0 },
+      { type: 'cube', px: -2, py: 0.6, pz: -1.5, size: 0.6, ior: 1.45, color: '#ffffff', roughness: 0 },
+      { type: 'sphere', px: 2, py: 0.7, pz: -1.5, size: 0.7, ior: 1.8, color: '#ffffff', roughness: 0.02 },
+    ]
+  }
+};
+
+function selectRoom(roomId) {
+  currentRoom = roomId;
+  // Update UI
+  document.querySelectorAll('.room-option').forEach(el => {
+    el.classList.toggle('active', el.dataset.room === roomId);
+  });
+  document.getElementById('status-room').textContent = `Room: ${roomPresets[roomId].name}`;
+
+  // Load room's default objects
+  sceneObjects = [];
+  selectedId = null;
+  nextId = 1;
+  hideProps();
+  const preset = roomPresets[roomId];
+  if (preset.defaultObjects) {
+    for (const obj of preset.defaultObjects) {
+      addObject(obj.type, { ...obj });
+    }
+  }
+  // Deselect after loading
+  selectedId = null;
+  hideProps();
+  refreshObjectList();
+  requestPreviewRedraw();
+}
+
+function getRoom() {
+  return roomPresets[currentRoom] || roomPresets.default;
+}
+
+// ============================================================
+// Focus Distance
+// ============================================================
+function updateFocusDist(val) {
+  const v = parseFloat(val);
+  const slider = document.getElementById('focus-dist');
+  // Treat min value as "auto"
+  if (v <= 0.5) {
+    customFocusDist = 0;
+    document.getElementById('focus-val').textContent = 'auto';
+    slider.value = 0.5;
+  } else {
+    customFocusDist = v;
+    document.getElementById('focus-val').textContent = v.toFixed(1);
+  }
+  requestPreviewRedraw();
+}
+
+function getEffectiveFocusDist() {
+  if (customFocusDist > 0) return customFocusDist;
+  return vlen(vsub(cam.target, getCameraPos()));
+}
 
 // ============================================================
 // Vector Math
@@ -879,8 +1169,9 @@ function getCameraMatrix() {
 
 function updateCameraInfo() {
   const pos = getCameraPos();
+  const fd = getEffectiveFocusDist();
   document.getElementById('camera-info').textContent =
-    `Cam (${pos[0].toFixed(1)}, ${pos[1].toFixed(1)}, ${pos[2].toFixed(1)}) → Target (${cam.target[0].toFixed(1)}, ${cam.target[1].toFixed(1)}, ${cam.target[2].toFixed(1)}) · Dist ${cam.dist.toFixed(1)}`;
+    `Cam (${pos[0].toFixed(1)}, ${pos[1].toFixed(1)}, ${pos[2].toFixed(1)}) → Target (${cam.target[0].toFixed(1)}, ${cam.target[1].toFixed(1)}, ${cam.target[2].toFixed(1)}) · Dist ${cam.dist.toFixed(1)} · Focus ${fd.toFixed(1)}`;
 }
 
 function resetCamera() {
@@ -895,6 +1186,9 @@ function resetCamera() {
 // --- Camera Controls ---
 previewCanvas.addEventListener('mousedown', (e) => {
   if (appMode !== 'edit') return;
+  clickStartX = e.clientX;
+  clickStartY = e.clientY;
+  clickMoved = false;
   if (e.button === 2 || (e.button === 0 && e.shiftKey)) {
     camPanning = true;
   } else if (e.button === 0) {
@@ -912,6 +1206,11 @@ window.addEventListener('mousemove', (e) => {
   camLastX = e.clientX;
   camLastY = e.clientY;
 
+  // Track if mouse moved significantly (for click-to-select)
+  if (Math.abs(e.clientX - clickStartX) > 3 || Math.abs(e.clientY - clickStartY) > 3) {
+    clickMoved = true;
+  }
+
   if (camDragging) {
     cam.theta -= dx * 0.005;
     cam.phi += dy * 0.005;
@@ -927,9 +1226,15 @@ window.addEventListener('mousemove', (e) => {
   requestPreviewRedraw();
 });
 
-window.addEventListener('mouseup', () => {
+window.addEventListener('mouseup', (e) => {
+  const wasDragging = camDragging;
   camDragging = false;
   camPanning = false;
+
+  // Click-to-select: if mouse didn't move much and was left button
+  if (wasDragging && !clickMoved && appMode === 'edit') {
+    handleClickSelect(e);
+  }
 });
 
 previewCanvas.addEventListener('wheel', (e) => {
@@ -942,6 +1247,56 @@ previewCanvas.addEventListener('wheel', (e) => {
 }, { passive: false });
 
 previewCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+// ============================================================
+// Click-to-Select via Raycasting
+// ============================================================
+function handleClickSelect(e) {
+  const rect = previewCanvas.getBoundingClientRect();
+  const mx = (e.clientX - rect.left) * window.devicePixelRatio;
+  const my = (e.clientY - rect.top) * window.devicePixelRatio;
+  const W = previewCanvas.width;
+  const H = previewCanvas.height;
+
+  const camMat = getCameraMatrix();
+  const fov = cam.fov;
+  const aspect = W / H;
+
+  // Convert screen coords to ray direction
+  const u = (2 * mx / W - 1) * fov * aspect;
+  const v = (1 - 2 * my / H) * fov;
+  const rd = vnorm(vadd(vadd(vmul(camMat.right, u), vmul(camMat.up, v)), camMat.fwd));
+  const ro = camMat.pos;
+
+  // Intersect with scene objects only (not ground)
+  let closest = null;
+  let closestT = Infinity;
+  let hitObjId = null;
+
+  for (const obj of sceneObjects) {
+    let hit;
+    if (obj.type === 'sphere') {
+      hit = intersectSphere(ro, rd, [obj.px, obj.py, obj.pz], obj.size);
+    } else {
+      hit = intersectBox(ro, rd, [obj.px, obj.py, obj.pz], obj.size);
+    }
+    if (hit && hit.t < closestT) {
+      closestT = hit.t;
+      closest = hit;
+      hitObjId = obj.id;
+    }
+  }
+
+  if (hitObjId !== null) {
+    selectObject(hitObjId);
+  } else {
+    // Clicked empty space - deselect
+    selectedId = null;
+    hideProps();
+    refreshObjectList();
+    requestPreviewRedraw();
+  }
+}
 
 // ============================================================
 // 3D Preview Rendering
@@ -980,17 +1335,30 @@ function drawPreview() {
   const ctx = previewCtx;
   const camMat = getCameraMatrix();
   const previewMode = document.getElementById('preview-mode').value;
+  const room = getRoom();
 
   // Clear with gradient
   const grad = ctx.createLinearGradient(0, 0, 0, H);
-  grad.addColorStop(0, '#12121e');
-  grad.addColorStop(0.5, '#0d0d16');
-  grad.addColorStop(1, '#0a0a12');
+  grad.addColorStop(0, room.bgGradient[0]);
+  grad.addColorStop(0.5, room.bgGradient[1]);
+  grad.addColorStop(1, room.bgGradient[2]);
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
 
   // Draw grid
   drawGrid(ctx, camMat, W, H);
+
+  // Draw room walls if applicable
+  if (room.walls) {
+    drawRoomWalls(ctx, camMat, W, H, room.walls);
+  }
+
+  // Draw room lights as glowing spheres
+  if (room.lights) {
+    for (const light of room.lights) {
+      drawLightPreview(ctx, camMat, W, H, light);
+    }
+  }
 
   // Sort objects by depth for proper rendering
   const sorted = [...sceneObjects].sort((a, b) => {
@@ -1009,6 +1377,9 @@ function drawPreview() {
     }
   }
 
+  // Draw focus indicator
+  drawFocusIndicator(ctx, camMat, W, H);
+
   // Draw axes indicator
   drawAxesIndicator(ctx, camMat, W, H);
 }
@@ -1016,9 +1387,10 @@ function drawPreview() {
 function drawGrid(ctx, camMat, W, H) {
   const gridSize = 10;
   const step = 1;
+  const room = getRoom();
 
   // Sub-grid
-  ctx.strokeStyle = 'rgba(50, 50, 70, 0.15)';
+  ctx.strokeStyle = room.gridColor;
   ctx.lineWidth = 0.5;
   for (let i = -gridSize; i <= gridSize; i += step) {
     const p1 = project3D([i, 0, -gridSize], camMat, W, H);
@@ -1049,6 +1421,101 @@ function drawGrid(ctx, camMat, W, H) {
     ctx.strokeStyle = 'rgba(96, 165, 250, 0.4)';
     ctx.beginPath(); ctx.moveTo(az1[0], az1[1]); ctx.lineTo(az2[0], az2[1]); ctx.stroke();
   }
+}
+
+function drawRoomWalls(ctx, camMat, W, H, walls) {
+  const s = walls.size;
+  // Draw wall outlines
+  const wallFaces = [
+    // Back wall
+    { corners: [[-s, 0, -s], [s, 0, -s], [s, s*2, -s], [-s, s*2, -s]], color: walls.back },
+    // Left wall
+    { corners: [[-s, 0, -s], [-s, 0, s], [-s, s*2, s], [-s, s*2, -s]], color: walls.left },
+    // Right wall
+    { corners: [[s, 0, -s], [s, 0, s], [s, s*2, s], [s, s*2, -s]], color: walls.right },
+    // Ceiling
+    { corners: [[-s, s*2, -s], [s, s*2, -s], [s, s*2, s], [-s, s*2, s]], color: walls.top },
+  ];
+
+  for (const face of wallFaces) {
+    const pts = face.corners.map(p => project3D(p, camMat, W, H)).filter(Boolean);
+    if (pts.length < 3) continue;
+    const r = (face.color[0] * 255) | 0;
+    const g = (face.color[1] * 255) | 0;
+    const b = (face.color[2] * 255) | 0;
+    ctx.fillStyle = `rgba(${r},${g},${b},0.15)`;
+    ctx.strokeStyle = `rgba(${r},${g},${b},0.3)`;
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+}
+
+function drawLightPreview(ctx, camMat, W, H, light) {
+  const cp = project3D(light.pos, camMat, W, H);
+  if (!cp) return;
+  const r = Math.max(4, 15 / cp[2]);
+  const intensity = Math.sqrt(light.color[0] * light.color[0] + light.color[1] * light.color[1] + light.color[2] * light.color[2]);
+  const nr = Math.min(1, light.color[0] / intensity);
+  const ng = Math.min(1, light.color[1] / intensity);
+  const nb = Math.min(1, light.color[2] / intensity);
+
+  // Glow
+  const glow = ctx.createRadialGradient(cp[0], cp[1], 0, cp[0], cp[1], r * 4);
+  glow.addColorStop(0, `rgba(${(nr*255)|0},${(ng*255)|0},${(nb*255)|0},0.4)`);
+  glow.addColorStop(1, `rgba(${(nr*255)|0},${(ng*255)|0},${(nb*255)|0},0)`);
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(cp[0], cp[1], r * 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Core
+  ctx.fillStyle = `rgba(${(nr*255)|0},${(ng*255)|0},${(nb*255)|0},0.9)`;
+  ctx.beginPath();
+  ctx.arc(cp[0], cp[1], r, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawFocusIndicator(ctx, camMat, W, H) {
+  const focusDist = getEffectiveFocusDist();
+  // Compute focus point along camera forward direction
+  const focusPoint = vadd(camMat.pos, vmul(camMat.fwd, focusDist));
+  const fp = project3D(focusPoint, camMat, W, H);
+  if (!fp) return;
+
+  const size = 12;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(74, 108, 247, 0.7)';
+  ctx.lineWidth = 1.5;
+
+  // Crosshair
+  ctx.beginPath();
+  ctx.moveTo(fp[0] - size, fp[1]);
+  ctx.lineTo(fp[0] - size * 0.4, fp[1]);
+  ctx.moveTo(fp[0] + size * 0.4, fp[1]);
+  ctx.lineTo(fp[0] + size, fp[1]);
+  ctx.moveTo(fp[0], fp[1] - size);
+  ctx.lineTo(fp[0], fp[1] - size * 0.4);
+  ctx.moveTo(fp[0], fp[1] + size * 0.4);
+  ctx.lineTo(fp[0], fp[1] + size);
+  ctx.stroke();
+
+  // Circle
+  ctx.strokeStyle = 'rgba(74, 108, 247, 0.4)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(fp[0], fp[1], size, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Label
+  ctx.fillStyle = 'rgba(74, 108, 247, 0.6)';
+  ctx.font = '9px ' + getComputedStyle(document.body).fontFamily;
+  ctx.fillText(`f:${focusDist.toFixed(1)}`, fp[0] + size + 3, fp[1] + 3);
+  ctx.restore();
 }
 
 function drawSpherePreview(ctx, camMat, W, H, obj, selected, previewMode) {
@@ -1565,19 +2032,96 @@ function intersectPlane(ro, rd, y) {
   return { t, p, n: [0, 1, 0] };
 }
 
+// Intersect axis-aligned wall planes for room environments
+function intersectWalls(ro, rd, walls) {
+  if (!walls) return null;
+  const s = walls.size;
+  let closest = null;
+  let closestT = Infinity;
+
+  // Floor (y=0)
+  const floorHit = intersectPlane(ro, rd, 0);
+  if (floorHit && floorHit.t < closestT && Math.abs(floorHit.p[0]) <= s && Math.abs(floorHit.p[2]) <= s) {
+    closestT = floorHit.t;
+    closest = { ...floorHit, wallColor: walls.floor };
+  }
+
+  // Ceiling (y=size*2)
+  if (Math.abs(rd[1]) > 1e-8) {
+    const t = (s * 2 - ro[1]) / rd[1];
+    if (t > 0.001 && t < closestT) {
+      const p = vadd(ro, vmul(rd, t));
+      if (Math.abs(p[0]) <= s && Math.abs(p[2]) <= s) {
+        closestT = t;
+        closest = { t, p, n: [0, -1, 0], wallColor: walls.top };
+      }
+    }
+  }
+
+  // Left wall (x=-size)
+  if (Math.abs(rd[0]) > 1e-8) {
+    const t = (-s - ro[0]) / rd[0];
+    if (t > 0.001 && t < closestT) {
+      const p = vadd(ro, vmul(rd, t));
+      if (p[1] >= 0 && p[1] <= s * 2 && Math.abs(p[2]) <= s) {
+        closestT = t;
+        closest = { t, p, n: [1, 0, 0], wallColor: walls.left };
+      }
+    }
+  }
+
+  // Right wall (x=size)
+  if (Math.abs(rd[0]) > 1e-8) {
+    const t = (s - ro[0]) / rd[0];
+    if (t > 0.001 && t < closestT) {
+      const p = vadd(ro, vmul(rd, t));
+      if (p[1] >= 0 && p[1] <= s * 2 && Math.abs(p[2]) <= s) {
+        closestT = t;
+        closest = { t, p, n: [-1, 0, 0], wallColor: walls.right };
+      }
+    }
+  }
+
+  // Back wall (z=-size)
+  if (Math.abs(rd[2]) > 1e-8) {
+    const t = (-s - ro[2]) / rd[2];
+    if (t > 0.001 && t < closestT) {
+      const p = vadd(ro, vmul(rd, t));
+      if (p[1] >= 0 && p[1] <= s * 2 && Math.abs(p[0]) <= s) {
+        closestT = t;
+        closest = { t, p, n: [0, 0, 1], wallColor: walls.back };
+      }
+    }
+  }
+
+  return closest;
+}
+
 // ============================================================
-// Scene Intersection
+// Scene Intersection (room-aware)
 // ============================================================
 function intersectScene(ro, rd, objects) {
   let closest = null;
   let closestT = Infinity;
   let hitObj = null;
+  const room = getRoom();
 
-  const gnd = intersectPlane(ro, rd, 0);
-  if (gnd && gnd.t < closestT) {
-    closestT = gnd.t;
-    closest = gnd;
-    hitObj = { type: 'ground' };
+  if (room.walls) {
+    // Use room walls instead of infinite ground
+    const wallHit = intersectWalls(ro, rd, room.walls);
+    if (wallHit && wallHit.t < closestT) {
+      closestT = wallHit.t;
+      closest = wallHit;
+      hitObj = { type: 'wall', wallColor: wallHit.wallColor };
+    }
+  } else {
+    // Default ground plane
+    const gnd = intersectPlane(ro, rd, 0);
+    if (gnd && gnd.t < closestT) {
+      closestT = gnd.t;
+      closest = gnd;
+      hitObj = { type: 'ground' };
+    }
   }
 
   for (const obj of objects) {
@@ -1595,6 +2139,21 @@ function intersectScene(ro, rd, objects) {
   }
 
   return closest ? { ...closest, obj: hitObj } : null;
+}
+
+// Intersect light spheres for direct light sampling
+function intersectLights(ro, rd, lights) {
+  if (!lights) return null;
+  let closest = null;
+  let closestT = Infinity;
+  for (const light of lights) {
+    const hit = intersectSphere(ro, rd, light.pos, light.radius);
+    if (hit && hit.t < closestT) {
+      closestT = hit.t;
+      closest = { t: hit.t, color: light.color };
+    }
+  }
+  return closest;
 }
 
 // ============================================================
@@ -1616,51 +2175,122 @@ function refract(uv, n, etaiOverEtat) {
 }
 
 // ============================================================
-// Sky & Ground
+// Sky & Ground (room-aware)
 // ============================================================
 function skyColor(rd) {
-  const t = 0.5 * (rd[1] + 1.0);
-  const sky = vlerp([0.8, 0.85, 0.95], [0.3, 0.5, 0.9], t);
-  const sunDir = vnorm([0.8, 0.6, -0.3]);
-  const sunDot = Math.max(0, vdot(rd, sunDir));
-  const sun = vmul([1, 0.95, 0.85], Math.pow(sunDot, 256) * 8 + Math.pow(sunDot, 32) * 0.5);
-  return vadd(sky, sun);
+  return getRoom().sky(rd);
 }
 
 function groundColor(p) {
-  const scale = 1.0;
-  const cx = Math.floor(p[0] * scale + 1000);
-  const cz = Math.floor(p[2] * scale + 1000);
-  const checker = (cx + cz) % 2 === 0;
-  return checker ? [0.85, 0.85, 0.85] : [0.35, 0.35, 0.4];
+  return getRoom().ground(p);
 }
 
 // ============================================================
-// Path Trace
+// Path Trace (room-aware with lights)
 // ============================================================
 function trace(ro, rd, objects, depth) {
   if (depth <= 0) return [0, 0, 0];
 
+  const room = getRoom();
+
+  // Check light intersection first
+  const lightHit = intersectLights(ro, rd, room.lights);
+
   const hit = intersectScene(ro, rd, objects);
+
+  // If we hit a light before any geometry
+  if (lightHit && (!hit || lightHit.t < hit.t)) {
+    return lightHit.color;
+  }
+
   if (!hit) return skyColor(rd);
 
   const { p, n, obj } = hit;
 
+  // Wall hit
+  if (obj.type === 'wall') {
+    const albedo = obj.wallColor;
+    let light = room.ambientLight;
+
+    // Direct lighting from room lights
+    if (room.lights) {
+      for (const lt of room.lights) {
+        const toLight = vsub(lt.pos, p);
+        const lightDist = vlen(toLight);
+        const lightDir = vmul(toLight, 1 / lightDist);
+        const nDotL = Math.max(0, vdot(n, lightDir));
+        if (nDotL > 0) {
+          // Shadow check
+          const shadowHit = intersectScene(vadd(p, vmul(n, 0.001)), lightDir, objects);
+          if (!shadowHit || shadowHit.t > lightDist) {
+            const attenuation = 1 / (1 + lightDist * lightDist * 0.1);
+            light += nDotL * attenuation;
+            // Add colored light contribution
+            const colorContrib = vmul(lt.color, nDotL * attenuation * 0.1);
+            return vadd(vmul(albedo, light), vmulv(albedo, colorContrib));
+          }
+        }
+      }
+    }
+
+    // Sun lighting
+    if (room.sunIntensity > 0) {
+      const sunDir = vnorm(room.sunDir);
+      const shadowHit = intersectScene(vadd(p, vmul(n, 0.001)), sunDir, objects);
+      if (!shadowHit || shadowHit.obj.type === 'ground' || shadowHit.obj.type === 'wall') {
+        light += room.sunIntensity * Math.max(0, vdot(n, sunDir)) * 0.7;
+      }
+    }
+
+    // Indirect bounce
+    if (depth > 1) {
+      const bounceDir = randomOnHemisphere(n);
+      const indirect = trace(vadd(p, vmul(n, 0.001)), bounceDir, objects, depth - 1);
+      return vadd(vmul(albedo, light), vmulv(albedo, vmul(indirect, 0.15)));
+    }
+    return vmul(albedo, light);
+  }
+
   if (obj.type === 'ground') {
     const albedo = groundColor(p);
-    const sunDir = vnorm([0.8, 0.6, -0.3]);
-    const shadowHit = intersectScene(vadd(p, vmul(n, 0.001)), sunDir, objects);
-    let light;
-    if (shadowHit && shadowHit.obj.type !== 'ground') {
-      light = 0.3;
-    } else {
-      light = 0.3 + 0.7 * Math.max(0, vdot(n, sunDir));
+    let light = room.ambientLight;
+
+    // Direct lighting from room lights
+    if (room.lights) {
+      for (const lt of room.lights) {
+        const toLight = vsub(lt.pos, p);
+        const lightDist = vlen(toLight);
+        const lightDir = vmul(toLight, 1 / lightDist);
+        const nDotL = Math.max(0, vdot(n, lightDir));
+        if (nDotL > 0) {
+          const shadowHit = intersectScene(vadd(p, vmul(n, 0.001)), lightDir, objects);
+          if (!shadowHit || shadowHit.t > lightDist) {
+            const attenuation = 1 / (1 + lightDist * lightDist * 0.1);
+            light += nDotL * attenuation;
+            const colorContrib = vmul(lt.color, nDotL * attenuation * 0.1);
+            return vadd(vmul(albedo, light), vmulv(albedo, colorContrib));
+          }
+        }
+      }
     }
+
+    // Sun lighting
+    if (room.sunIntensity > 0) {
+      const sunDir = vnorm(room.sunDir);
+      const shadowHit = intersectScene(vadd(p, vmul(n, 0.001)), sunDir, objects);
+      if (shadowHit && shadowHit.obj.type !== 'ground' && shadowHit.obj.type !== 'wall') {
+        light = room.ambientLight;
+      } else {
+        light = room.ambientLight + room.sunIntensity * 0.7 * Math.max(0, vdot(n, sunDir));
+      }
+    }
+
     const bounceDir = randomOnHemisphere(n);
     const indirect = trace(vadd(p, vmul(n, 0.001)), bounceDir, objects, depth - 1);
     return vadd(vmul(albedo, light), vmulv(albedo, vmul(indirect, 0.15)));
   }
 
+  // Glass object
   const tint = hexToRgb(obj.color);
   const roughness = obj.roughness || 0;
 
@@ -1760,8 +2390,8 @@ function renderLoop() {
 
   const { pos: camPos, fwd: camFwd, right: camRight, up: camUp } = getCameraMatrix();
   const fov = cam.fov;
-  const aperture = 0.02;
-  const focusDist = vlen(vsub(cam.target, camPos));
+  const aperture = customFocusDist > 0 ? 0.06 : 0.02; // Stronger DOF when manual focus
+  const focusDist = getEffectiveFocusDist();
 
   rngState = sampleCount * 73856093 + 19349663;
 
@@ -1837,9 +2467,14 @@ function renderLoop() {
 // Init
 // ============================================================
 function initDefaultScene() {
-  addObject('sphere', { px: 0, py: 0.8, pz: -2, size: 0.8, ior: 1.52, color: '#e8f0ff', roughness: 0 });
-  addObject('cube', { px: -1.8, py: 0.6, pz: -1.5, size: 0.6, ior: 1.45, color: '#ffe8f0', roughness: 0.02 });
-  addObject('sphere', { px: 1.5, py: 0.5, pz: -1.2, size: 0.5, ior: 2.0, color: '#f0ffe8', roughness: 0 });
+  const preset = roomPresets.default;
+  for (const obj of preset.defaultObjects) {
+    addObject(obj.type, { ...obj });
+  }
+  // Deselect after init
+  selectedId = null;
+  hideProps();
+  refreshObjectList();
 }
 
 initDefaultScene();
