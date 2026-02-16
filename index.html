@@ -3,334 +3,1259 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Glass Path Tracer</title>
+<title>Glass Ray Tracer</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-darkest: #0a0a10;
+    --bg-dark: #101018;
+    --bg-panel: #14141e;
+    --bg-input: #1a1a28;
+    --bg-hover: #1e1e30;
+    --border: #2a2a3a;
+    --border-light: #353548;
+    --text: #e0e0e8;
+    --text-dim: #8a8aa0;
+    --text-dimmer: #5a5a70;
+    --accent: #4a6cf7;
+    --accent-hover: #5b7bf8;
+    --accent-glow: rgba(74, 108, 247, 0.3);
+    --danger: #f87171;
+    --danger-bg: #3a1a1a;
+    --success: #4ade80;
+    --warning: #fbbf24;
+    --radius: 6px;
+    --radius-lg: 10px;
+    --transition: 0.2s ease;
+    --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    --font-mono: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  }
+
   body {
-    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-    background: #1a1a2e;
-    color: #e0e0e0;
+    font-family: var(--font);
+    background: var(--bg-darkest);
+    color: var(--text);
     display: flex;
+    flex-direction: column;
     height: 100vh;
     overflow: hidden;
+    user-select: none;
   }
+
+  /* ===== HEADER / TOOLBAR ===== */
+  #toolbar {
+    height: 48px;
+    min-height: 48px;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 12px;
+    z-index: 100;
+  }
+  #toolbar .app-title {
+    font-size: 1rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-right: 8px;
+    white-space: nowrap;
+  }
+  #toolbar .app-title .icon {
+    font-size: 1.2rem;
+  }
+  .toolbar-sep {
+    width: 1px;
+    height: 24px;
+    background: var(--border);
+    margin: 0 4px;
+  }
+  .tb-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-input);
+    color: var(--text-dim);
+    font-size: 0.8rem;
+    font-family: var(--font);
+    cursor: pointer;
+    transition: all var(--transition);
+    white-space: nowrap;
+  }
+  .tb-btn:hover { background: var(--bg-hover); color: var(--text); border-color: var(--border-light); }
+  .tb-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .tb-btn .emoji { font-size: 1rem; }
+
+  .render-btn {
+    background: linear-gradient(135deg, #4a6cf7, #6366f1);
+    color: #fff;
+    border: none;
+    padding: 6px 20px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: all var(--transition);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font);
+  }
+  .render-btn:hover { background: linear-gradient(135deg, #5b7bf8, #7577f2); box-shadow: 0 0 16px var(--accent-glow); }
+  .render-btn:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
+  .render-btn.stop { background: linear-gradient(135deg, #dc2626, #ef4444); }
+  .render-btn.stop:hover { background: linear-gradient(135deg, #ef4444, #f87171); }
+  .render-btn.back { background: var(--bg-input); border: 1px solid var(--border); color: var(--text-dim); }
+  .render-btn.back:hover { background: var(--bg-hover); color: var(--text); }
+
+  .toolbar-right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .toolbar-status {
+    font-size: 0.75rem;
+    color: var(--text-dimmer);
+    font-family: var(--font-mono);
+  }
+
+  /* ===== MAIN LAYOUT ===== */
+  #app {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* ===== LEFT SIDEBAR ===== */
   #sidebar {
-    width: 320px;
-    min-width: 320px;
-    background: #16213e;
-    border-right: 1px solid #0f3460;
+    width: 280px;
+    min-width: 280px;
+    background: var(--bg-panel);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .panel-header {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--text-dimmer);
+    padding: 12px 16px 8px;
+    font-weight: 600;
+  }
+
+  .panel-section {
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* Object List */
+  .object-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px 8px 8px;
+    overflow-y: auto;
+    max-height: 260px;
+  }
+  .object-item {
+    display: flex;
+    align-items: center;
+    padding: 8px 10px;
+    background: transparent;
+    border-radius: var(--radius);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 0.12s;
+    gap: 8px;
+  }
+  .object-item:hover { background: var(--bg-hover); }
+  .object-item.selected { background: rgba(74, 108, 247, 0.1); border-color: var(--accent); }
+  .object-item .obj-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9rem;
+    background: var(--bg-input);
+    flex-shrink: 0;
+  }
+  .object-item .obj-info { flex: 1; min-width: 0; }
+  .object-item .obj-name { font-size: 0.8rem; font-weight: 500; }
+  .object-item .obj-detail { font-size: 0.65rem; color: var(--text-dimmer); margin-top: 1px; }
+  .object-item .obj-remove {
+    background: none;
+    border: none;
+    color: var(--text-dimmer);
+    cursor: pointer;
+    font-size: 0.85rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    opacity: 0;
+    transition: all 0.12s;
+  }
+  .object-item:hover .obj-remove { opacity: 1; }
+  .object-item .obj-remove:hover { color: var(--danger); background: var(--danger-bg); }
+
+  .empty-state {
+    text-align: center;
+    color: var(--text-dimmer);
+    padding: 16px;
+    font-size: 0.75rem;
+    font-style: italic;
+  }
+
+  /* ===== RIGHT PROPERTIES PANEL ===== */
+  #properties {
+    width: 260px;
+    min-width: 260px;
+    background: var(--bg-panel);
+    border-left: 1px solid var(--border);
     display: flex;
     flex-direction: column;
     overflow-y: auto;
   }
-  #sidebar h1 {
-    font-size: 1.3em;
-    padding: 16px 20px;
-    background: #0f3460;
-    color: #e94560;
-    letter-spacing: 1px;
-  }
-  .section {
-    padding: 16px 20px;
-    border-bottom: 1px solid #0f3460;
-  }
-  .section h2 {
-    font-size: 0.85em;
-    text-transform: uppercase;
-    letter-spacing: 1.5px;
-    color: #e94560;
+  #properties.hidden { display: none; }
+
+  .prop-group {
+    padding: 0 14px;
     margin-bottom: 12px;
   }
-  label {
-    display: block;
-    font-size: 0.8em;
-    color: #8899aa;
+  .prop-label {
+    font-size: 0.68rem;
+    color: var(--text-dim);
     margin-bottom: 4px;
-    margin-top: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 500;
   }
-  label:first-child { margin-top: 0; }
-  input[type="number"], input[type="color"], select {
-    width: 100%;
-    padding: 6px 10px;
-    background: #1a1a2e;
-    border: 1px solid #0f3460;
-    color: #e0e0e0;
-    border-radius: 4px;
-    font-size: 0.9em;
-  }
-  input[type="color"] {
-    height: 32px;
-    padding: 2px;
-    cursor: pointer;
-  }
-  select { cursor: pointer; }
-  .row {
+  .prop-row {
     display: flex;
-    gap: 8px;
+    gap: 4px;
   }
-  .row > div { flex: 1; }
-  button {
-    padding: 8px 16px;
-    border: none;
-    border-radius: 4px;
+  .prop-row .axis-label {
+    font-size: 0.6rem;
+    color: var(--text-dimmer);
+    text-align: center;
+    margin-top: 2px;
+  }
+  .prop-row .axis-group { flex: 1; min-width: 0; }
+
+  /* Styled Inputs */
+  input[type="number"], select {
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 5px 8px;
+    border-radius: var(--radius);
+    font-size: 0.78rem;
+    font-family: var(--font-mono);
+    width: 100%;
+    transition: border-color var(--transition);
+  }
+  input[type="number"]:focus, select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-glow);
+  }
+  input[type="number"]::-webkit-inner-spin-button { opacity: 0.3; }
+  select { cursor: pointer; font-family: var(--font); }
+
+  /* Range Slider */
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--border);
+    outline: none;
+    margin: 6px 0;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
     cursor: pointer;
-    font-size: 0.9em;
-    font-weight: 600;
-    transition: background 0.2s;
+    border: 2px solid var(--bg-panel);
+    box-shadow: 0 0 4px rgba(0,0,0,0.4);
+    transition: transform 0.1s;
   }
-  .btn-primary {
-    background: #e94560;
-    color: white;
-    width: 100%;
-    margin-top: 12px;
+  input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+  input[type="range"]::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: 2px solid var(--bg-panel);
   }
-  .btn-primary:hover { background: #c73650; }
-  .btn-render {
-    background: #4ecca3;
-    color: #1a1a2e;
-    width: 100%;
-    margin-top: 12px;
-    font-size: 1em;
-    padding: 10px;
-  }
-  .btn-render:hover { background: #3db890; }
-  .btn-stop {
-    background: #e94560;
-    color: white;
-    width: 100%;
-    margin-top: 8px;
-    font-size: 1em;
-    padding: 10px;
-  }
-  .btn-stop:hover { background: #c73650; }
-  #object-list {
-    list-style: none;
-    max-height: 200px;
-    overflow-y: auto;
-  }
-  #object-list li {
+  .range-labels {
     display: flex;
     justify-content: space-between;
-    align-items: center;
-    padding: 6px 8px;
-    background: #1a1a2e;
-    border-radius: 4px;
-    margin-bottom: 4px;
-    font-size: 0.85em;
+    font-size: 0.6rem;
+    color: var(--text-dimmer);
+    margin-top: -2px;
   }
-  #object-list li .obj-info {
+  .range-value {
+    font-family: var(--font-mono);
+    color: var(--accent);
+    font-size: 0.7rem;
+    font-weight: 600;
+  }
+
+  /* Color Picker */
+  .color-wrap {
     display: flex;
     align-items: center;
     gap: 8px;
   }
-  #object-list li .color-dot {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    display: inline-block;
+  input[type="color"] {
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: none;
+    cursor: pointer;
+    padding: 1px;
   }
-  .btn-remove {
-    background: #e94560;
-    color: white;
-    padding: 2px 8px;
-    font-size: 0.75em;
-    border-radius: 3px;
+  .color-hex {
+    font-size: 0.72rem;
+    font-family: var(--font-mono);
+    color: var(--text-dim);
   }
-  .btn-remove:hover { background: #c73650; }
-  #canvas-container {
-    flex: 1;
+
+  /* Delete button */
+  .btn-delete {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #0d0d1a;
+    gap: 6px;
+    width: 100%;
+    padding: 7px;
+    border: 1px solid #5a2a2a;
+    border-radius: var(--radius);
+    background: var(--danger-bg);
+    color: var(--danger);
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: all var(--transition);
+    font-family: var(--font);
+    margin-top: 4px;
+  }
+  .btn-delete:hover { background: #4a2020; border-color: #7a3a3a; }
+
+  /* ===== VIEWPORT ===== */
+  #viewport-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
     position: relative;
+    overflow: hidden;
+    background: var(--bg-darkest);
   }
+
+  #viewport-wrap {
+    flex: 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
   canvas {
-    image-rendering: pixelated;
+    display: block;
   }
-  #status {
+
+  #preview-canvas {
     position: absolute;
-    top: 12px;
-    right: 16px;
-    font-size: 0.8em;
-    color: #4ecca3;
-    background: rgba(0,0,0,0.6);
-    padding: 4px 10px;
-    border-radius: 4px;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    cursor: grab;
   }
-  .empty-msg {
-    color: #556;
-    font-size: 0.85em;
-    font-style: italic;
+  #preview-canvas:active { cursor: grabbing; }
+  #preview-canvas.hidden { display: none; }
+
+  #render-canvas {
+    image-rendering: pixelated;
+    max-width: 100%;
+    max-height: 100%;
+  }
+  #render-canvas.hidden { display: none; }
+
+  /* Viewport overlay info */
+  .viewport-overlay {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    font-size: 0.65rem;
+    font-family: var(--font-mono);
+    color: var(--text-dimmer);
+    background: rgba(10, 10, 16, 0.8);
+    padding: 4px 8px;
+    border-radius: 4px;
+    pointer-events: none;
+    line-height: 1.5;
+    z-index: 10;
+  }
+  .viewport-hint {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    font-size: 0.62rem;
+    color: var(--text-dimmer);
+    background: rgba(10, 10, 16, 0.7);
+    padding: 4px 8px;
+    border-radius: 4px;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  /* Progress bar */
+  .progress-bar-wrap {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--border);
+    z-index: 10;
+  }
+  .progress-bar-wrap.hidden { display: none; }
+  .progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), #818cf8);
+    transition: width 0.3s;
+    border-radius: 0 2px 2px 0;
+  }
+
+  /* Render overlay */
+  .render-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(10, 10, 16, 0.9);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 20px 28px;
+    text-align: center;
+    z-index: 20;
+    backdrop-filter: blur(8px);
+  }
+  .render-overlay.hidden { display: none; }
+  .render-overlay .title { font-size: 0.9rem; font-weight: 600; margin-bottom: 6px; }
+  .render-overlay .info { font-size: 0.75rem; color: var(--text-dim); font-family: var(--font-mono); }
+
+  /* Bottom status bar */
+  #statusbar {
+    height: 24px;
+    min-height: 24px;
+    background: var(--bg-panel);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    font-size: 0.65rem;
+    color: var(--text-dimmer);
+    gap: 16px;
+    font-family: var(--font-mono);
+  }
+  .status-item { display: flex; align-items: center; gap: 4px; }
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--success);
+  }
+  .status-dot.rendering { background: var(--warning); animation: pulse 1s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  /* Render settings in sidebar */
+  .settings-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 0 14px 12px;
+  }
+  .settings-grid label {
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    margin-bottom: 2px;
+    display: block;
+  }
+  .settings-grid select {
+    font-size: 0.72rem;
+    padding: 4px 6px;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--border-light); }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    #sidebar { width: 220px; min-width: 220px; }
+    #properties { width: 200px; min-width: 200px; }
+  }
+  @media (max-width: 700px) {
+    #sidebar { display: none; }
+    #properties { display: none; }
   }
 </style>
 </head>
 <body>
 
-<div id="sidebar">
-  <h1>🔮 Glass Path Tracer</h1>
-
-  <div class="section">
-    <h2>Add Object</h2>
-    <label>Type</label>
-    <select id="obj-type">
-      <option value="sphere">Sphere</option>
-      <option value="cube">Cube</option>
-    </select>
-
-    <label>Position (X, Y, Z)</label>
-    <div class="row">
-      <div><input type="number" id="pos-x" value="0" step="0.5"></div>
-      <div><input type="number" id="pos-y" value="1" step="0.5"></div>
-      <div><input type="number" id="pos-z" value="-5" step="0.5"></div>
-    </div>
-
-    <label>Size</label>
-    <input type="number" id="obj-size" value="1" step="0.1" min="0.1">
-
-    <label>Color (absorption)</label>
-    <input type="color" id="obj-color" value="#88ccff">
-
-    <label>IOR (Index of Refraction)</label>
-    <input type="number" id="obj-ior" value="1.5" step="0.05" min="1.0" max="3.0">
-
-    <button class="btn-primary" onclick="addObject()">Add Object</button>
+<!-- ===== TOOLBAR ===== -->
+<div id="toolbar">
+  <div class="app-title">
+    <span class="icon">💎</span>
+    <span>Glass Ray Tracer</span>
   </div>
+  <div class="toolbar-sep"></div>
+  <button class="tb-btn" onclick="addObject('sphere')"><span class="emoji">🔮</span> Add Sphere</button>
+  <button class="tb-btn" onclick="addObject('cube')"><span class="emoji">🧊</span> Add Cube</button>
+  <div class="toolbar-sep"></div>
+  <button class="tb-btn" onclick="clearScene()"><span class="emoji">🗑</span> Clear</button>
+  <button class="tb-btn" onclick="resetCamera()"><span class="emoji">🎯</span> Reset Camera</button>
 
-  <div class="section">
-    <h2>Scene Objects</h2>
-    <ul id="object-list">
-      <li class="empty-msg">No objects yet</li>
-    </ul>
-  </div>
-
-  <div class="section">
-    <h2>Render Settings</h2>
-    <label>Resolution Scale</label>
-    <select id="res-scale">
-      <option value="0.25">Quarter (fast)</option>
-      <option value="0.5" selected>Half</option>
-      <option value="1">Full</option>
-    </select>
-    <label>Max Bounces</label>
-    <input type="number" id="max-bounces" value="8" min="1" max="20">
-    <button class="btn-render" onclick="startRender()">▶ Render</button>
-    <button class="btn-stop" onclick="stopRender()">■ Stop</button>
+  <div class="toolbar-right">
+    <span class="toolbar-status" id="toolbar-status">Edit Mode</span>
+    <div class="toolbar-sep"></div>
+    <button class="render-btn" id="render-btn" onclick="startRender()">▶ Render</button>
+    <button class="render-btn stop hidden" id="stop-btn" onclick="stopRender()">■ Stop</button>
+    <button class="render-btn back hidden" id="back-btn" onclick="backToEdit()">← Edit</button>
   </div>
 </div>
 
-<div id="canvas-container">
-  <canvas id="canvas"></canvas>
-  <div id="status">Ready</div>
+<!-- ===== MAIN APP ===== -->
+<div id="app">
+
+  <!-- LEFT SIDEBAR -->
+  <div id="sidebar">
+    <div class="panel-section">
+      <div class="panel-header">Scene Objects</div>
+      <div id="object-list" class="object-list">
+        <div class="empty-state">No objects yet</div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-header">Render Settings</div>
+      <div class="settings-grid">
+        <div>
+          <label>Resolution</label>
+          <select id="resolution">
+            <option value="400">400×300</option>
+            <option value="640" selected>640×480</option>
+            <option value="800">800×600</option>
+            <option value="1024">1024×768</option>
+          </select>
+        </div>
+        <div>
+          <label>Samples</label>
+          <select id="max-samples">
+            <option value="64">64</option>
+            <option value="256" selected>256</option>
+            <option value="1024">1024</option>
+            <option value="4096">4096</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- VIEWPORT -->
+  <div id="viewport-container">
+    <div id="viewport-wrap">
+      <canvas id="preview-canvas"></canvas>
+      <canvas id="render-canvas" class="hidden" width="640" height="480"></canvas>
+    </div>
+    <div class="viewport-overlay" id="camera-info"></div>
+    <div class="viewport-hint" id="viewport-hint">LMB: Orbit · Scroll: Zoom · RMB/Shift+LMB: Pan</div>
+    <div class="progress-bar-wrap hidden" id="progress-wrap">
+      <div class="progress-bar" id="progress-bar" style="width:0%"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT PROPERTIES PANEL -->
+  <div id="properties" class="hidden">
+    <div class="panel-header" id="props-title">Properties</div>
+
+    <div class="prop-group">
+      <div class="prop-label">Type</div>
+      <select id="prop-type" onchange="updateProp('type', this.value)">
+        <option value="sphere">Sphere</option>
+        <option value="cube">Cube</option>
+      </select>
+    </div>
+
+    <div class="prop-group">
+      <div class="prop-label">Position</div>
+      <div class="prop-row">
+        <div class="axis-group">
+          <input type="number" id="prop-px" step="0.1" onchange="updateProp('px', +this.value)">
+          <div class="axis-label" style="color:#f87171">X</div>
+        </div>
+        <div class="axis-group">
+          <input type="number" id="prop-py" step="0.1" onchange="updateProp('py', +this.value)">
+          <div class="axis-label" style="color:#4ade80">Y</div>
+        </div>
+        <div class="axis-group">
+          <input type="number" id="prop-pz" step="0.1" onchange="updateProp('pz', +this.value)">
+          <div class="axis-label" style="color:#60a5fa">Z</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="prop-group">
+      <div class="prop-label">Size</div>
+      <input type="number" id="prop-size" step="0.1" min="0.1" max="5" onchange="updateProp('size', +this.value)">
+    </div>
+
+    <div class="prop-group">
+      <div class="prop-label">Index of Refraction <span class="range-value" id="ior-val">1.50</span></div>
+      <input type="range" id="prop-ior" min="1.0" max="2.5" step="0.01" oninput="document.getElementById('ior-val').textContent=parseFloat(this.value).toFixed(2); updateProp('ior', +this.value)">
+      <div class="range-labels"><span>1.0 Air</span><span>2.5 Diamond</span></div>
+    </div>
+
+    <div class="prop-group">
+      <div class="prop-label">Glass Tint</div>
+      <div class="color-wrap">
+        <input type="color" id="prop-color" value="#ffffff" onchange="updateProp('color', this.value)">
+        <span class="color-hex" id="color-label">#ffffff</span>
+      </div>
+    </div>
+
+    <div class="prop-group">
+      <div class="prop-label">Roughness <span class="range-value" id="rough-val">0.00</span></div>
+      <input type="range" id="prop-roughness" min="0" max="0.5" step="0.01" oninput="document.getElementById('rough-val').textContent=parseFloat(this.value).toFixed(2); updateProp('roughness', +this.value)">
+      <div class="range-labels"><span>Smooth</span><span>Frosted</span></div>
+    </div>
+
+    <div class="prop-group">
+      <button class="btn-delete" onclick="removeSelected()">✕ Delete Object</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== STATUS BAR ===== -->
+<div id="statusbar">
+  <div class="status-item">
+    <div class="status-dot" id="status-dot"></div>
+    <span id="status-text">Ready</span>
+  </div>
+  <div class="status-item" id="status-objects">Objects: 0</div>
+  <div class="status-item" id="status-samples" style="display:none">Samples: 0/0</div>
 </div>
 
 <script>
 // ============================================================
-// Scene & State
+// Glass Ray Tracer — Professional UI with 3D Preview & Path Tracer
 // ============================================================
-const sceneObjects = [];
+
+// --- State ---
+let sceneObjects = [];
+let selectedId = null;
+let nextId = 1;
 let rendering = false;
 let sampleCount = 0;
+let maxSamples = 256;
 let accumBuffer = null;
-let animFrameId = null;
+let animFrame = null;
+let mode = 'edit'; // 'edit' or 'render'
 
-function addObject() {
+// --- Camera State ---
+let cam = {
+  theta: 0.6,      // azimuth
+  phi: 0.45,       // elevation
+  dist: 7,         // distance from target
+  target: [0, 0.5, 0],
+  fov: 0.8,
+};
+let camDragging = false;
+let camPanning = false;
+let camLastX = 0, camLastY = 0;
+
+// --- Canvases ---
+const previewCanvas = document.getElementById('preview-canvas');
+const previewCtx = previewCanvas.getContext('2d');
+const renderCanvas = document.getElementById('render-canvas');
+const renderCtx = renderCanvas.getContext('2d');
+
+// --- Camera Math ---
+function getCameraPos() {
+  const x = cam.target[0] + cam.dist * Math.sin(cam.theta) * Math.cos(cam.phi);
+  const y = cam.target[1] + cam.dist * Math.sin(cam.phi);
+  const z = cam.target[2] + cam.dist * Math.cos(cam.theta) * Math.cos(cam.phi);
+  return [x, y, z];
+}
+
+function getCameraMatrix() {
+  const pos = getCameraPos();
+  const fwd = vnorm(vsub(cam.target, pos));
+  const right = vnorm(vcross(fwd, [0, 1, 0]));
+  const up = vcross(right, fwd);
+  return { pos, fwd, right, up };
+}
+
+function updateCameraInfo() {
+  const pos = getCameraPos();
+  const el = document.getElementById('camera-info');
+  el.textContent = `Camera: (${pos[0].toFixed(1)}, ${pos[1].toFixed(1)}, ${pos[2].toFixed(1)}) → (${cam.target[0].toFixed(1)}, ${cam.target[1].toFixed(1)}, ${cam.target[2].toFixed(1)})`;
+}
+
+function resetCamera() {
+  cam.theta = 0.6;
+  cam.phi = 0.45;
+  cam.dist = 7;
+  cam.target = [0, 0.5, 0];
+  updateCameraInfo();
+  requestPreviewRedraw();
+}
+
+// --- Camera Controls ---
+previewCanvas.addEventListener('mousedown', (e) => {
+  if (mode !== 'edit') return;
+  if (e.button === 2 || (e.button === 0 && e.shiftKey)) {
+    camPanning = true;
+  } else if (e.button === 0) {
+    camDragging = true;
+  }
+  camLastX = e.clientX;
+  camLastY = e.clientY;
+  e.preventDefault();
+});
+
+window.addEventListener('mousemove', (e) => {
+  if (!camDragging && !camPanning) return;
+  const dx = e.clientX - camLastX;
+  const dy = e.clientY - camLastY;
+  camLastX = e.clientX;
+  camLastY = e.clientY;
+
+  if (camDragging) {
+    cam.theta -= dx * 0.005;
+    cam.phi += dy * 0.005;
+    cam.phi = Math.max(-Math.PI * 0.45, Math.min(Math.PI * 0.45, cam.phi));
+  }
+  if (camPanning) {
+    const { right, up } = getCameraMatrix();
+    const panSpeed = cam.dist * 0.002;
+    cam.target = vadd(cam.target, vmul(right, -dx * panSpeed));
+    cam.target = vadd(cam.target, vmul(up, dy * panSpeed));
+  }
+  updateCameraInfo();
+  requestPreviewRedraw();
+});
+
+window.addEventListener('mouseup', () => {
+  camDragging = false;
+  camPanning = false;
+});
+
+previewCanvas.addEventListener('wheel', (e) => {
+  if (mode !== 'edit') return;
+  cam.dist *= 1 + e.deltaY * 0.001;
+  cam.dist = Math.max(1, Math.min(50, cam.dist));
+  updateCameraInfo();
+  requestPreviewRedraw();
+  e.preventDefault();
+}, { passive: false });
+
+previewCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+// --- 3D Preview Rendering ---
+let previewDirty = true;
+let previewRAF = null;
+
+function requestPreviewRedraw() {
+  previewDirty = true;
+  if (!previewRAF) {
+    previewRAF = requestAnimationFrame(drawPreview);
+  }
+}
+
+function project3D(point, camMat, W, H) {
+  const rel = vsub(point, camMat.pos);
+  const x = vdot(rel, camMat.right);
+  const y = vdot(rel, camMat.up);
+  const z = vdot(rel, camMat.fwd);
+  if (z <= 0.01) return null;
+  const fov = cam.fov;
+  const aspect = W / H;
+  const sx = W / 2 + (x / (z * fov * aspect)) * W / 2;
+  const sy = H / 2 - (y / (z * fov)) * H / 2;
+  return [sx, sy, z];
+}
+
+function drawPreview() {
+  previewRAF = null;
+  if (mode !== 'edit') return;
+
+  const W = previewCanvas.width;
+  const H = previewCanvas.height;
+  if (W === 0 || H === 0) return;
+
+  const ctx = previewCtx;
+  const camMat = getCameraMatrix();
+
+  // Clear
+  ctx.fillStyle = '#0d0d14';
+  ctx.fillRect(0, 0, W, H);
+
+  // Draw grid
+  drawGrid(ctx, camMat, W, H);
+
+  // Draw objects
+  for (const obj of sceneObjects) {
+    const isSelected = obj.id === selectedId;
+    if (obj.type === 'sphere') {
+      drawSpherePreview(ctx, camMat, W, H, obj, isSelected);
+    } else {
+      drawCubePreview(ctx, camMat, W, H, obj, isSelected);
+    }
+  }
+
+  // Draw axes indicator
+  drawAxesIndicator(ctx, camMat, W, H);
+}
+
+function drawGrid(ctx, camMat, W, H) {
+  ctx.strokeStyle = 'rgba(60, 60, 80, 0.3)';
+  ctx.lineWidth = 1;
+  const gridSize = 10;
+  const step = 1;
+
+  for (let i = -gridSize; i <= gridSize; i += step) {
+    const p1 = project3D([i, 0, -gridSize], camMat, W, H);
+    const p2 = project3D([i, 0, gridSize], camMat, W, H);
+    if (p1 && p2) {
+      ctx.beginPath();
+      ctx.moveTo(p1[0], p1[1]);
+      ctx.lineTo(p2[0], p2[1]);
+      ctx.stroke();
+    }
+    const p3 = project3D([-gridSize, 0, i], camMat, W, H);
+    const p4 = project3D([gridSize, 0, i], camMat, W, H);
+    if (p3 && p4) {
+      ctx.beginPath();
+      ctx.moveTo(p3[0], p3[1]);
+      ctx.lineTo(p4[0], p4[1]);
+      ctx.stroke();
+    }
+  }
+
+  // Center axes on grid
+  ctx.lineWidth = 1.5;
+  // X axis (red)
+  const ax1 = project3D([-gridSize, 0, 0], camMat, W, H);
+  const ax2 = project3D([gridSize, 0, 0], camMat, W, H);
+  if (ax1 && ax2) {
+    ctx.strokeStyle = 'rgba(248, 113, 113, 0.5)';
+    ctx.beginPath(); ctx.moveTo(ax1[0], ax1[1]); ctx.lineTo(ax2[0], ax2[1]); ctx.stroke();
+  }
+  // Z axis (blue)
+  const az1 = project3D([0, 0, -gridSize], camMat, W, H);
+  const az2 = project3D([0, 0, gridSize], camMat, W, H);
+  if (az1 && az2) {
+    ctx.strokeStyle = 'rgba(96, 165, 250, 0.5)';
+    ctx.beginPath(); ctx.moveTo(az1[0], az1[1]); ctx.lineTo(az2[0], az2[1]); ctx.stroke();
+  }
+}
+
+function drawSpherePreview(ctx, camMat, W, H, obj, selected) {
+  const center = [obj.px, obj.py, obj.pz];
+  const cp = project3D(center, camMat, W, H);
+  if (!cp) return;
+
+  // Approximate screen radius
+  const edgePoint = vadd(center, vmul(getCameraMatrix().right, obj.size));
+  const ep = project3D(edgePoint, camMat, W, H);
+  if (!ep) return;
+  const screenR = Math.sqrt((ep[0]-cp[0])**2 + (ep[1]-cp[1])**2);
+
+  // Draw wireframe circles
+  const tint = obj.color || '#ffffff';
+  const alpha = selected ? 0.9 : 0.5;
+
+  // Fill with transparent tint
+  ctx.fillStyle = hexToRGBA(tint, selected ? 0.15 : 0.08);
+  ctx.beginPath();
+  ctx.arc(cp[0], cp[1], screenR, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Wireframe circles (3 rings)
+  ctx.strokeStyle = hexToRGBA(tint, alpha);
+  ctx.lineWidth = selected ? 2 : 1;
+
+  // Main circle
+  ctx.beginPath();
+  ctx.arc(cp[0], cp[1], screenR, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Latitude ring
+  drawEllipseRing(ctx, camMat, W, H, center, obj.size, [0,1,0], alpha, tint);
+  // Longitude ring
+  drawEllipseRing(ctx, camMat, W, H, center, obj.size, getCameraMatrix().right, alpha, tint);
+
+  if (selected) {
+    ctx.strokeStyle = 'rgba(74, 108, 247, 0.8)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.arc(cp[0], cp[1], screenR + 4, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
+function drawEllipseRing(ctx, camMat, W, H, center, radius, axis, alpha, tint) {
+  const segments = 32;
+  const up = vnorm(axis);
+  let tangent;
+  if (Math.abs(vdot(up, [1,0,0])) < 0.9) {
+    tangent = vnorm(vcross(up, [1,0,0]));
+  } else {
+    tangent = vnorm(vcross(up, [0,0,1]));
+  }
+  const bitangent = vcross(up, tangent);
+
+  ctx.strokeStyle = hexToRGBA(tint, alpha * 0.5);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  let started = false;
+  for (let i = 0; i <= segments; i++) {
+    const angle = (i / segments) * Math.PI * 2;
+    const pt = vadd(center, vadd(vmul(tangent, Math.cos(angle) * radius), vmul(bitangent, Math.sin(angle) * radius)));
+    const sp = project3D(pt, camMat, W, H);
+    if (sp) {
+      if (!started) { ctx.moveTo(sp[0], sp[1]); started = true; }
+      else ctx.lineTo(sp[0], sp[1]);
+    }
+  }
+  ctx.stroke();
+}
+
+function drawCubePreview(ctx, camMat, W, H, obj, selected) {
+  const c = [obj.px, obj.py, obj.pz];
+  const s = obj.size;
+  const tint = obj.color || '#ffffff';
+  const alpha = selected ? 0.9 : 0.5;
+
+  // 8 corners
+  const corners = [
+    [-1,-1,-1], [1,-1,-1], [1,1,-1], [-1,1,-1],
+    [-1,-1,1], [1,-1,1], [1,1,1], [-1,1,1]
+  ].map(v => [c[0]+v[0]*s, c[1]+v[1]*s, c[2]+v[2]*s]);
+
+  const projected = corners.map(p => project3D(p, camMat, W, H));
+
+  // 12 edges
+  const edges = [
+    [0,1],[1,2],[2,3],[3,0],
+    [4,5],[5,6],[6,7],[7,4],
+    [0,4],[1,5],[2,6],[3,7]
+  ];
+
+  // Fill faces with transparent tint
+  const faces = [
+    [0,1,2,3], [4,5,6,7], [0,1,5,4], [2,3,7,6], [0,3,7,4], [1,2,6,5]
+  ];
+  ctx.fillStyle = hexToRGBA(tint, selected ? 0.1 : 0.05);
+  for (const face of faces) {
+    const pts = face.map(i => projected[i]).filter(Boolean);
+    if (pts.length >= 3) {
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  // Draw edges
+  ctx.strokeStyle = hexToRGBA(tint, alpha);
+  ctx.lineWidth = selected ? 2 : 1;
+  for (const [a, b] of edges) {
+    if (projected[a] && projected[b]) {
+      ctx.beginPath();
+      ctx.moveTo(projected[a][0], projected[a][1]);
+      ctx.lineTo(projected[b][0], projected[b][1]);
+      ctx.stroke();
+    }
+  }
+
+  if (selected) {
+    // Selection highlight
+    ctx.strokeStyle = 'rgba(74, 108, 247, 0.8)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 4]);
+    for (const [a, b] of edges) {
+      if (projected[a] && projected[b]) {
+        ctx.beginPath();
+        ctx.moveTo(projected[a][0], projected[a][1]);
+        ctx.lineTo(projected[b][0], projected[b][1]);
+        ctx.stroke();
+      }
+    }
+    ctx.setLineDash([]);
+  }
+}
+
+function drawAxesIndicator(ctx, camMat, W, H) {
+  const size = 30;
+  const ox = 40;
+  const oy = H - 40;
+
+  const dirs = [
+    { v: [1,0,0], c: '#f87171', l: 'X' },
+    { v: [0,1,0], c: '#4ade80', l: 'Y' },
+    { v: [0,0,1], c: '#60a5fa', l: 'Z' },
+  ];
+
+  for (const d of dirs) {
+    const sx = vdot(d.v, camMat.right) * size;
+    const sy = -vdot(d.v, camMat.up) * size;
+    ctx.strokeStyle = d.c;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(ox, oy);
+    ctx.lineTo(ox + sx, oy + sy);
+    ctx.stroke();
+    ctx.fillStyle = d.c;
+    ctx.font = '10px sans-serif';
+    ctx.fillText(d.l, ox + sx + 3, oy + sy + 3);
+  }
+}
+
+function hexToRGBA(hex, a) {
+  const r = parseInt(hex.slice(1,3), 16);
+  const g = parseInt(hex.slice(3,5), 16);
+  const b = parseInt(hex.slice(5,7), 16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+// --- Resize handling ---
+function resizePreview() {
+  const wrap = document.getElementById('viewport-wrap');
+  const rect = wrap.getBoundingClientRect();
+  previewCanvas.width = rect.width * window.devicePixelRatio;
+  previewCanvas.height = rect.height * window.devicePixelRatio;
+  previewCanvas.style.width = rect.width + 'px';
+  previewCanvas.style.height = rect.height + 'px';
+  requestPreviewRedraw();
+}
+
+window.addEventListener('resize', resizePreview);
+setTimeout(resizePreview, 0);
+
+// --- Scene Management ---
+function addObject(type, props) {
   const obj = {
-    type: document.getElementById('obj-type').value,
-    pos: [
-      parseFloat(document.getElementById('pos-x').value),
-      parseFloat(document.getElementById('pos-y').value),
-      parseFloat(document.getElementById('pos-z').value)
-    ],
-    size: parseFloat(document.getElementById('obj-size').value),
-    color: hexToRgb(document.getElementById('obj-color').value),
-    colorHex: document.getElementById('obj-color').value,
-    ior: parseFloat(document.getElementById('obj-ior').value)
+    id: nextId++,
+    type,
+    px: 0, py: type === 'sphere' ? 0.8 : 0.6, pz: -2,
+    size: type === 'sphere' ? 0.8 : 0.6,
+    ior: 1.5,
+    color: '#ffffff',
+    roughness: 0,
+    ...props
   };
   sceneObjects.push(obj);
-  updateObjectList();
+  refreshObjectList();
+  selectObject(obj.id);
+  updateStatusBar();
+  requestPreviewRedraw();
+  return obj;
 }
 
-function removeObject(idx) {
-  sceneObjects.splice(idx, 1);
-  updateObjectList();
+function removeObject(id) {
+  sceneObjects = sceneObjects.filter(o => o.id !== id);
+  if (selectedId === id) { selectedId = null; hideProps(); }
+  refreshObjectList();
+  updateStatusBar();
+  requestPreviewRedraw();
 }
 
-function updateObjectList() {
-  const ul = document.getElementById('object-list');
+function removeSelected() {
+  if (selectedId) removeObject(selectedId);
+}
+
+function clearScene() {
+  sceneObjects = [];
+  selectedId = null;
+  nextId = 1;
+  hideProps();
+  refreshObjectList();
+  updateStatusBar();
+  requestPreviewRedraw();
+}
+
+function selectObject(id) {
+  selectedId = id;
+  refreshObjectList();
+  showProps();
+  requestPreviewRedraw();
+}
+
+function refreshObjectList() {
+  const el = document.getElementById('object-list');
   if (sceneObjects.length === 0) {
-    ul.innerHTML = '<li class="empty-msg">No objects yet</li>';
+    el.innerHTML = '<div class="empty-state">No objects yet</div>';
     return;
   }
-  ul.innerHTML = sceneObjects.map((o, i) =>
-    `<li>
-      <span class="obj-info">
-        <span class="color-dot" style="background:${o.colorHex}"></span>
-        ${o.type} @ (${o.pos.map(v=>v.toFixed(1)).join(', ')}) s=${o.size.toFixed(1)} ior=${o.ior.toFixed(2)}
-      </span>
-      <button class="btn-remove" onclick="removeObject(${i})">✕</button>
-    </li>`
-  ).join('');
+  el.innerHTML = sceneObjects.map(o => `
+    <div class="object-item ${o.id === selectedId ? 'selected' : ''}" onclick="selectObject(${o.id})">
+      <div class="obj-icon">${o.type === 'sphere' ? '🔮' : '🧊'}</div>
+      <div class="obj-info">
+        <div class="obj-name">${o.type.charAt(0).toUpperCase() + o.type.slice(1)} #${o.id}</div>
+        <div class="obj-detail">IOR ${o.ior} · (${o.px.toFixed(1)}, ${o.py.toFixed(1)}, ${o.pz.toFixed(1)})</div>
+      </div>
+      <button class="obj-remove" onclick="event.stopPropagation();removeObject(${o.id})">✕</button>
+    </div>
+  `).join('');
 }
 
-function hexToRgb(hex) {
-  const r = parseInt(hex.slice(1,3), 16) / 255;
-  const g = parseInt(hex.slice(3,5), 16) / 255;
-  const b = parseInt(hex.slice(5,7), 16) / 255;
-  return [r, g, b];
+function showProps() {
+  const obj = sceneObjects.find(o => o.id === selectedId);
+  if (!obj) return;
+  const panel = document.getElementById('properties');
+  panel.classList.remove('hidden');
+  document.getElementById('props-title').textContent = `${obj.type.charAt(0).toUpperCase() + obj.type.slice(1)} #${obj.id}`;
+  document.getElementById('prop-type').value = obj.type;
+  document.getElementById('prop-px').value = obj.px;
+  document.getElementById('prop-py').value = obj.py;
+  document.getElementById('prop-pz').value = obj.pz;
+  document.getElementById('prop-size').value = obj.size;
+  document.getElementById('prop-ior').value = obj.ior;
+  document.getElementById('ior-val').textContent = obj.ior.toFixed(2);
+  document.getElementById('prop-color').value = obj.color;
+  document.getElementById('color-label').textContent = obj.color;
+  document.getElementById('prop-roughness').value = obj.roughness;
+  document.getElementById('rough-val').textContent = obj.roughness.toFixed(2);
+}
+
+function hideProps() {
+  document.getElementById('properties').classList.add('hidden');
+}
+
+function updateProp(key, val) {
+  const obj = sceneObjects.find(o => o.id === selectedId);
+  if (!obj) return;
+  obj[key] = val;
+  if (key === 'color') document.getElementById('color-label').textContent = val;
+  refreshObjectList();
+  requestPreviewRedraw();
+}
+
+function updateStatusBar() {
+  document.getElementById('status-objects').textContent = `Objects: ${sceneObjects.length}`;
+}
+
+// --- Mode Switching ---
+function switchToRenderMode() {
+  mode = 'render';
+  previewCanvas.classList.add('hidden');
+  renderCanvas.classList.remove('hidden');
+  document.getElementById('viewport-hint').style.display = 'none';
+  document.getElementById('render-btn').classList.add('hidden');
+  document.getElementById('stop-btn').classList.remove('hidden');
+  document.getElementById('back-btn').classList.remove('hidden');
+  document.getElementById('progress-wrap').classList.remove('hidden');
+  document.getElementById('toolbar-status').textContent = 'Rendering...';
+  document.getElementById('status-dot').classList.add('rendering');
+  document.getElementById('status-samples').style.display = '';
+}
+
+function switchToEditMode() {
+  mode = 'edit';
+  previewCanvas.classList.remove('hidden');
+  renderCanvas.classList.add('hidden');
+  document.getElementById('viewport-hint').style.display = '';
+  document.getElementById('render-btn').classList.remove('hidden');
+  document.getElementById('render-btn').disabled = false;
+  document.getElementById('stop-btn').classList.add('hidden');
+  document.getElementById('back-btn').classList.add('hidden');
+  document.getElementById('progress-wrap').classList.add('hidden');
+  document.getElementById('toolbar-status').textContent = 'Edit Mode';
+  document.getElementById('status-dot').classList.remove('rendering');
+  document.getElementById('status-text').textContent = 'Ready';
+  document.getElementById('status-samples').style.display = 'none';
+  resizePreview();
+  requestPreviewRedraw();
+}
+
+function backToEdit() {
+  stopRender();
+  switchToEditMode();
 }
 
 // ============================================================
 // Vector Math
 // ============================================================
-function v3(x,y,z) { return [x,y,z]; }
-function vadd(a,b) { return [a[0]+b[0], a[1]+b[1], a[2]+b[2]]; }
-function vsub(a,b) { return [a[0]-b[0], a[1]-b[1], a[2]-b[2]]; }
-function vmul(a,s) { return [a[0]*s, a[1]*s, a[2]*s]; }
-function vmulv(a,b) { return [a[0]*b[0], a[1]*b[1], a[2]*b[2]]; }
-function vdot(a,b) { return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]; }
-function vlen(a) { return Math.sqrt(vdot(a,a)); }
-function vnorm(a) { const l=vlen(a); return l>0?vmul(a,1/l):[0,0,0]; }
-function vcross(a,b) { return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
-function vreflect(v,n) { return vsub(v, vmul(n, 2*vdot(v,n))); }
-function vlerp(a,b,t) { return vadd(vmul(a,1-t), vmul(b,t)); }
-function vabs(a) { return [Math.abs(a[0]), Math.abs(a[1]), Math.abs(a[2])]; }
-function vmax(a,b) { return [Math.max(a[0],b[0]), Math.max(a[1],b[1]), Math.max(a[2],b[2])]; }
-function vmin(a,b) { return [Math.min(a[0],b[0]), Math.min(a[1],b[1]), Math.min(a[2],b[2])]; }
+function vec3(x, y, z) { return [x, y, z]; }
+function vadd(a, b) { return [a[0]+b[0], a[1]+b[1], a[2]+b[2]]; }
+function vsub(a, b) { return [a[0]-b[0], a[1]-b[1], a[2]-b[2]]; }
+function vmul(a, s) { return [a[0]*s, a[1]*s, a[2]*s]; }
+function vmulv(a, b) { return [a[0]*b[0], a[1]*b[1], a[2]*b[2]]; }
+function vdot(a, b) { return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]; }
+function vlen(a) { return Math.sqrt(vdot(a, a)); }
+function vnorm(a) { const l = vlen(a); return l > 0 ? vmul(a, 1/l) : [0,0,0]; }
+function vcross(a, b) { return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
+function vreflect(v, n) { return vsub(v, vmul(n, 2*vdot(v, n))); }
+function vlerp(a, b, t) { return vadd(vmul(a, 1-t), vmul(b, t)); }
 
 // ============================================================
 // Random
 // ============================================================
-function rand() { return Math.random(); }
-
+let rngState = 12345;
+function rngNext() {
+  rngState = (rngState * 1103515245 + 12345) & 0x7fffffff;
+  return rngState / 0x7fffffff;
+}
 function randomInUnitSphere() {
   while (true) {
-    const p = [rand()*2-1, rand()*2-1, rand()*2-1];
-    if (vdot(p,p) < 1) return p;
+    const v = [rngNext()*2-1, rngNext()*2-1, rngNext()*2-1];
+    if (vdot(v, v) < 1) return v;
+  }
+}
+function randomOnHemisphere(n) {
+  const v = vnorm(randomInUnitSphere());
+  return vdot(v, n) > 0 ? v : vmul(v, -1);
+}
+function randomInUnitDisk() {
+  while (true) {
+    const v = [rngNext()*2-1, rngNext()*2-1, 0];
+    if (vdot(v, v) < 1) return v;
   }
 }
 
-function randomOnHemisphere(n) {
-  const p = vnorm(randomInUnitSphere());
-  return vdot(p, n) > 0 ? p : vmul(p, -1);
-}
-
-function randomCosineDirection(n) {
-  // Cosine-weighted hemisphere sampling
-  const r1 = rand(), r2 = rand();
-  const phi = 2 * Math.PI * r1;
-  const sqrtR2 = Math.sqrt(r2);
-  const x = Math.cos(phi) * sqrtR2;
-  const y = Math.sin(phi) * sqrtR2;
-  const z = Math.sqrt(1 - r2);
-
-  // Build ONB from normal
-  const w = n;
-  const a = Math.abs(w[0]) > 0.9 ? v3(0,1,0) : v3(1,0,0);
-  const u = vnorm(vcross(a, w));
-  const v = vcross(w, u);
-
-  return vnorm(vadd(vadd(vmul(u, x), vmul(v, y)), vmul(w, z)));
+// ============================================================
+// Color Helpers
+// ============================================================
+function hexToRgb(hex) {
+  const r = parseInt(hex.slice(1,3), 16) / 255;
+  const g = parseInt(hex.slice(3,5), 16) / 255;
+  const b = parseInt(hex.slice(5,7), 16) / 255;
+  return [r, g, b];
 }
 
 // ============================================================
@@ -341,7 +1266,7 @@ function intersectSphere(ro, rd, center, radius) {
   const a = vdot(rd, rd);
   const b = vdot(oc, rd);
   const c = vdot(oc, oc) - radius * radius;
-  const disc = b*b - a*c;
+  const disc = b * b - a * c;
   if (disc < 0) return null;
   const sqrtDisc = Math.sqrt(disc);
   let t = (-b - sqrtDisc) / a;
@@ -357,47 +1282,38 @@ function intersectSphere(ro, rd, center, radius) {
 function intersectBox(ro, rd, center, halfSize) {
   const mn = vsub(center, [halfSize, halfSize, halfSize]);
   const mx = vadd(center, [halfSize, halfSize, halfSize]);
-
   let tmin = -Infinity, tmax = Infinity;
   let nmin = [0,0,0];
-
   for (let i = 0; i < 3; i++) {
     if (Math.abs(rd[i]) < 1e-8) {
       if (ro[i] < mn[i] || ro[i] > mx[i]) return null;
-      continue;
+    } else {
+      let t1 = (mn[i] - ro[i]) / rd[i];
+      let t2 = (mx[i] - ro[i]) / rd[i];
+      let n1 = [0,0,0]; n1[i] = -1;
+      let n2 = [0,0,0]; n2[i] = 1;
+      if (t1 > t2) { [t1, t2] = [t2, t1]; [n1, n2] = [n2, n1]; }
+      if (t1 > tmin) { tmin = t1; nmin = n1; }
+      if (t2 < tmax) { tmax = t2; }
+      if (tmin > tmax) return null;
     }
-    const invD = 1 / rd[i];
-    let t1 = (mn[i] - ro[i]) * invD;
-    let t2 = (mx[i] - ro[i]) * invD;
-    let n1 = [0,0,0]; n1[i] = -1;
-    let n2 = [0,0,0]; n2[i] = 1;
-    if (invD < 0) { [t1,t2] = [t2,t1]; [n1,n2] = [n2,n1]; }
-    if (t1 > tmin) { tmin = t1; nmin = n1; }
-    if (t2 < tmax) { tmax = t2; }
-    if (tmin > tmax) return null;
   }
-
   let t = tmin;
   let n = nmin;
   if (t < 0.001) {
     t = tmax;
-    // Inside the box, flip normal
-    // Recompute exit normal
-    let exitN = [0,0,0];
+    n = [0,0,0];
     for (let i = 0; i < 3; i++) {
-      if (Math.abs(rd[i]) < 1e-8) continue;
-      const invD = 1 / rd[i];
-      let t2 = ((invD > 0 ? center[i]+halfSize : center[i]-halfSize) - ro[i]) * invD;
-      if (Math.abs(t2 - tmax) < 0.0001) {
-        exitN[i] = invD > 0 ? 1 : -1;
-      }
+      const p = ro[i] + rd[i] * t;
+      if (Math.abs(p - (center[i] + halfSize)) < 0.001) n[i] = 1;
+      else if (Math.abs(p - (center[i] - halfSize)) < 0.001) n[i] = -1;
     }
-    n = exitN;
+    if (vlen(n) < 0.5) n = vmul(rd, -1);
+    n = vnorm(n);
     if (t < 0.001) return null;
   }
-
   const p = vadd(ro, vmul(rd, t));
-  return { t, p, n: vnorm(n) };
+  return { t, p, n };
 }
 
 function intersectPlane(ro, rd, y) {
@@ -411,252 +1327,271 @@ function intersectPlane(ro, rd, y) {
 // ============================================================
 // Scene Intersection
 // ============================================================
-function intersectScene(ro, rd) {
+function intersectScene(ro, rd, objects) {
   let closest = null;
   let closestT = Infinity;
+  let hitObj = null;
 
-  // Ground plane at y=0
   const gnd = intersectPlane(ro, rd, 0);
   if (gnd && gnd.t < closestT) {
     closestT = gnd.t;
-    closest = { ...gnd, material: 'ground' };
+    closest = gnd;
+    hitObj = { type: 'ground' };
   }
 
-  for (const obj of sceneObjects) {
+  for (const obj of objects) {
     let hit;
     if (obj.type === 'sphere') {
-      hit = intersectSphere(ro, rd, obj.pos, obj.size);
+      hit = intersectSphere(ro, rd, [obj.px, obj.py, obj.pz], obj.size);
     } else {
-      hit = intersectBox(ro, rd, obj.pos, obj.size);
+      hit = intersectBox(ro, rd, [obj.px, obj.py, obj.pz], obj.size);
     }
     if (hit && hit.t < closestT) {
       closestT = hit.t;
-      closest = { ...hit, material: 'glass', color: obj.color, ior: obj.ior };
+      closest = hit;
+      hitObj = obj;
     }
   }
 
-  return closest;
+  return closest ? { ...closest, obj: hitObj } : null;
 }
 
 // ============================================================
-// Environment / Sky
+// Fresnel & Refraction
 // ============================================================
-function skyColor(rd) {
-  const t = 0.5 * (rd[1] + 1.0);
-  // Gradient from warm horizon to blue sky
-  const bottom = [0.8, 0.6, 0.4];
-  const top = [0.3, 0.5, 0.9];
-  const sky = vlerp(bottom, top, Math.max(0, Math.min(1, t)));
-  // Sun
-  const sunDir = vnorm([0.5, 0.8, -0.3]);
-  const sunDot = Math.max(0, vdot(rd, sunDir));
-  const sunGlow = Math.pow(sunDot, 128) * 10;
-  const sunSoft = Math.pow(sunDot, 8) * 0.3;
-  return vadd(vmul(sky, 1.5), vmul([1, 0.95, 0.8], sunGlow + sunSoft));
-}
-
-// ============================================================
-// Fresnel (Schlick)
-// ============================================================
-function schlick(cosTheta, ior) {
-  let r0 = (1 - ior) / (1 + ior);
+function fresnelSchlick(cosTheta, ior1, ior2) {
+  let r0 = (ior1 - ior2) / (ior1 + ior2);
   r0 = r0 * r0;
   return r0 + (1 - r0) * Math.pow(1 - cosTheta, 5);
 }
 
-// ============================================================
-// Path Tracing
-// ============================================================
-function tracePath(ro, rd, maxBounces) {
-  let throughput = [1, 1, 1];
-  let color = [0, 0, 0];
-  let curRo = ro, curRd = rd;
-
-  for (let bounce = 0; bounce < maxBounces; bounce++) {
-    const hit = intersectScene(curRo, curRd);
-
-    if (!hit) {
-      // Hit sky
-      color = vadd(color, vmulv(throughput, skyColor(curRd)));
-      break;
-    }
-
-    if (hit.material === 'ground') {
-      // Checkerboard pattern
-      const fx = Math.floor(hit.p[0] * 0.5);
-      const fz = Math.floor(hit.p[2] * 0.5);
-      const checker = ((fx + fz) & 1) === 0;
-      const albedo = checker ? [0.4, 0.4, 0.45] : [0.2, 0.2, 0.22];
-
-      // Diffuse bounce
-      throughput = vmulv(throughput, albedo);
-      curRo = vadd(hit.p, vmul(hit.n, 0.001));
-      curRd = randomCosineDirection(hit.n);
-      continue;
-    }
-
-    if (hit.material === 'glass') {
-      let n = hit.n;
-      let eta;
-      let frontFace = vdot(curRd, n) < 0;
-
-      if (frontFace) {
-        eta = 1.0 / hit.ior;
-      } else {
-        n = vmul(n, -1);
-        eta = hit.ior;
-      }
-
-      const cosI = Math.min(-vdot(curRd, n), 1.0);
-      const sin2T = eta * eta * (1 - cosI * cosI);
-
-      // Beer's law absorption when exiting
-      if (!frontFace) {
-        // We traveled through the medium
-        const dist = hit.t;
-        const absorbColor = hit.color;
-        // absorption = exp(-sigma * dist), sigma derived from color
-        const absorption = [
-          Math.exp(-(1 - absorbColor[0]) * 2 * dist),
-          Math.exp(-(1 - absorbColor[1]) * 2 * dist),
-          Math.exp(-(1 - absorbColor[2]) * 2 * dist)
-        ];
-        throughput = vmulv(throughput, absorption);
-      }
-
-      const reflectance = schlick(cosI, eta);
-
-      if (sin2T > 1.0 || rand() < reflectance) {
-        // Total internal reflection or Fresnel reflection
-        curRd = vreflect(curRd, n);
-        curRo = vadd(hit.p, vmul(n, 0.001));
-      } else {
-        // Refract (Snell's law)
-        const perpendicular = vmul(vadd(curRd, vmul(n, cosI)), eta);
-        const parallel = vmul(n, -Math.sqrt(Math.abs(1 - vdot(perpendicular, perpendicular))));
-        curRd = vnorm(vadd(perpendicular, parallel));
-        curRo = vsub(hit.p, vmul(n, 0.001));
-      }
-      continue;
-    }
-  }
-
-  return color;
+function refract(uv, n, etaiOverEtat) {
+  const cosTheta = Math.min(-vdot(uv, n), 1.0);
+  const rOutPerp = vmul(vadd(uv, vmul(n, cosTheta)), etaiOverEtat);
+  const perpLenSq = vdot(rOutPerp, rOutPerp);
+  if (perpLenSq > 1.0) return null;
+  const rOutParallel = vmul(n, -Math.sqrt(Math.abs(1.0 - perpLenSq)));
+  return vnorm(vadd(rOutPerp, rOutParallel));
 }
 
 // ============================================================
-// Rendering
+// Sky & Ground
 // ============================================================
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-let imgData;
-let W, H;
+function skyColor(rd) {
+  const t = 0.5 * (rd[1] + 1.0);
+  const sky = vlerp([0.8, 0.85, 0.95], [0.3, 0.5, 0.9], t);
+  const sunDir = vnorm([0.8, 0.6, -0.3]);
+  const sunDot = Math.max(0, vdot(rd, sunDir));
+  const sun = vmul([1, 0.95, 0.85], Math.pow(sunDot, 256) * 8 + Math.pow(sunDot, 32) * 0.5);
+  return vadd(sky, sun);
+}
 
-function setupCanvas() {
-  const container = document.getElementById('canvas-container');
-  const scale = parseFloat(document.getElementById('res-scale').value);
-  W = Math.floor(container.clientWidth * scale);
-  H = Math.floor(container.clientHeight * scale);
-  canvas.width = W;
-  canvas.height = H;
-  canvas.style.width = container.clientWidth + 'px';
-  canvas.style.height = container.clientHeight + 'px';
-  imgData = ctx.createImageData(W, H);
+function groundColor(p) {
+  const scale = 1.0;
+  const cx = Math.floor(p[0] * scale + 1000);
+  const cz = Math.floor(p[2] * scale + 1000);
+  const checker = (cx + cz) % 2 === 0;
+  return checker ? [0.85, 0.85, 0.85] : [0.35, 0.35, 0.4];
+}
+
+// ============================================================
+// Path Trace
+// ============================================================
+function trace(ro, rd, objects, depth) {
+  if (depth <= 0) return [0, 0, 0];
+
+  const hit = intersectScene(ro, rd, objects);
+  if (!hit) return skyColor(rd);
+
+  const { p, n, obj } = hit;
+
+  if (obj.type === 'ground') {
+    const albedo = groundColor(p);
+    const sunDir = vnorm([0.8, 0.6, -0.3]);
+    const shadowHit = intersectScene(vadd(p, vmul(n, 0.001)), sunDir, objects);
+    let light;
+    if (shadowHit && shadowHit.obj.type !== 'ground') {
+      light = 0.3;
+    } else {
+      light = 0.3 + 0.7 * Math.max(0, vdot(n, sunDir));
+    }
+    const bounceDir = randomOnHemisphere(n);
+    const indirect = trace(vadd(p, vmul(n, 0.001)), bounceDir, objects, depth - 1);
+    return vadd(vmul(albedo, light), vmulv(albedo, vmul(indirect, 0.15)));
+  }
+
+  const tint = hexToRgb(obj.color);
+  const roughness = obj.roughness || 0;
+
+  let frontFace = vdot(rd, n) < 0;
+  let normal = frontFace ? n : vmul(n, -1);
+  let ior1 = frontFace ? 1.0 : obj.ior;
+  let ior2 = frontFace ? obj.ior : 1.0;
+
+  let perturbedNormal = normal;
+  if (roughness > 0) {
+    const perturb = vmul(randomInUnitSphere(), roughness);
+    perturbedNormal = vnorm(vadd(normal, perturb));
+    if (vdot(perturbedNormal, normal) < 0.1) perturbedNormal = normal;
+  }
+
+  const cosTheta = Math.min(Math.abs(vdot(rd, perturbedNormal)), 1.0);
+  const reflectance = fresnelSchlick(cosTheta, ior1, ior2);
+
+  const offset = vmul(perturbedNormal, 0.001);
+
+  if (rngNext() < reflectance) {
+    const reflected = vreflect(rd, perturbedNormal);
+    const result = trace(vadd(p, offset), vnorm(reflected), objects, depth - 1);
+    return vmulv(result, tint);
+  } else {
+    const ratio = ior1 / ior2;
+    const refracted = refract(vnorm(rd), perturbedNormal, ratio);
+    if (!refracted) {
+      const reflected = vreflect(rd, perturbedNormal);
+      const result = trace(vadd(p, offset), vnorm(reflected), objects, depth - 1);
+      return vmulv(result, tint);
+    }
+    let absorption = [1, 1, 1];
+    if (!frontFace) {
+      const dist = hit.t;
+      absorption = [
+        Math.exp(-(1 - tint[0]) * dist * 2),
+        Math.exp(-(1 - tint[1]) * dist * 2),
+        Math.exp(-(1 - tint[2]) * dist * 2)
+      ];
+    }
+    const result = trace(vsub(p, offset), vnorm(refracted), objects, depth - 1);
+    return vmulv(result, absorption);
+  }
+}
+
+// ============================================================
+// Render Engine
+// ============================================================
+function startRender() {
+  if (rendering) return;
+
+  const resVal = parseInt(document.getElementById('resolution').value);
+  const aspect = 4 / 3;
+  const W = resVal;
+  const H = Math.round(resVal / aspect);
+  renderCanvas.width = W;
+  renderCanvas.height = H;
+
+  maxSamples = parseInt(document.getElementById('max-samples').value);
   accumBuffer = new Float64Array(W * H * 3);
   sampleCount = 0;
-}
-
-function renderSample() {
-  const fov = Math.PI / 3;
-  const aspect = W / H;
-  const camPos = [0, 2.5, 3];
-  const camTarget = [0, 0.8, -3];
-  const camDir = vnorm(vsub(camTarget, camPos));
-  const camRight = vnorm(vcross(camDir, [0, 1, 0]));
-  const camUp = vcross(camRight, camDir);
-  const halfH = Math.tan(fov / 2);
-  const halfW = halfH * aspect;
-  const maxBounces = parseInt(document.getElementById('max-bounces').value) || 8;
-
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      const u = (2 * (x + rand()) / W - 1) * halfW;
-      const v = (1 - 2 * (y + rand()) / H) * halfH;
-
-      const rd = vnorm(vadd(vadd(vmul(camRight, u), vmul(camUp, v)), camDir));
-      const color = tracePath(camPos, rd, maxBounces);
-
-      const idx = (y * W + x) * 3;
-      accumBuffer[idx] += color[0];
-      accumBuffer[idx + 1] += color[1];
-      accumBuffer[idx + 2] += color[2];
-    }
-  }
-
-  sampleCount++;
-
-  // Tonemap and write to image
-  const invS = 1 / sampleCount;
-  for (let i = 0; i < W * H; i++) {
-    const r = accumBuffer[i * 3] * invS;
-    const g = accumBuffer[i * 3 + 1] * invS;
-    const b = accumBuffer[i * 3 + 2] * invS;
-    // ACES-ish tonemap + gamma
-    imgData.data[i * 4] = Math.min(255, Math.pow(r / (r + 1), 1/2.2) * 255) | 0;
-    imgData.data[i * 4 + 1] = Math.min(255, Math.pow(g / (g + 1), 1/2.2) * 255) | 0;
-    imgData.data[i * 4 + 2] = Math.min(255, Math.pow(b / (b + 1), 1/2.2) * 255) | 0;
-    imgData.data[i * 4 + 3] = 255;
-  }
-
-  ctx.putImageData(imgData, 0, 0);
-  document.getElementById('status').textContent = `Sample ${sampleCount} — progressive rendering`;
-}
-
-function renderLoop() {
-  if (!rendering) return;
-  const start = performance.now();
-  renderSample();
-  const elapsed = performance.now() - start;
-  // Aim for responsive UI — yield between samples
-  animFrameId = setTimeout(() => {
-    if (rendering) renderLoop();
-  }, Math.max(1, 16 - elapsed));
-}
-
-function startRender() {
-  stopRender();
-  setupCanvas();
   rendering = true;
-  document.getElementById('status').textContent = 'Rendering...';
+
+  switchToRenderMode();
   renderLoop();
 }
 
 function stopRender() {
   rendering = false;
-  if (animFrameId) {
-    clearTimeout(animFrameId);
-    animFrameId = null;
+  if (animFrame) cancelAnimationFrame(animFrame);
+  document.getElementById('status-text').textContent = `Stopped at ${sampleCount} samples`;
+  document.getElementById('status-dot').classList.remove('rendering');
+  document.getElementById('stop-btn').classList.add('hidden');
+}
+
+function renderLoop() {
+  if (!rendering) return;
+
+  const W = renderCanvas.width;
+  const H = renderCanvas.height;
+  const objects = sceneObjects;
+
+  // Camera from preview
+  const { pos: camPos, fwd: camFwd, right: camRight, up: camUp } = getCameraMatrix();
+  const fov = cam.fov;
+  const aperture = 0.02;
+  const focusDist = vlen(vsub(cam.target, camPos));
+
+  const samplesPerFrame = 1;
+  rngState = sampleCount * 73856093 + 19349663;
+
+  for (let s = 0; s < samplesPerFrame; s++) {
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        rngState = (x * 73856093 ^ y * 19349663 ^ sampleCount * 83492791) & 0x7fffffff;
+        if (rngState === 0) rngState = 1;
+
+        const u = (2 * (x + rngNext()) / W - 1) * fov * (W / H);
+        const v = (1 - 2 * (y + rngNext()) / H) * fov;
+
+        const disk = vmul(randomInUnitDisk(), aperture);
+        const offset = vadd(vmul(camRight, disk[0]), vmul(camUp, disk[1]));
+
+        const dir = vnorm(vadd(vadd(vmul(camRight, u * focusDist), vmul(camUp, v * focusDist)), vmul(camFwd, focusDist)));
+        const ro = vadd(camPos, offset);
+        const rd = vnorm(vsub(vadd(camPos, vmul(dir, focusDist)), ro));
+
+        const color = trace(ro, rd, objects, 6);
+
+        const idx = (y * W + x) * 3;
+        accumBuffer[idx] += color[0];
+        accumBuffer[idx + 1] += color[1];
+        accumBuffer[idx + 2] += color[2];
+      }
+    }
+    sampleCount++;
   }
-  document.getElementById('status').textContent = sampleCount > 0 ? `Stopped at sample ${sampleCount}` : 'Ready';
+
+  // Write to canvas
+  const imgData = renderCtx.createImageData(W, H);
+  const invS = 1 / sampleCount;
+  for (let i = 0; i < W * H; i++) {
+    const r = Math.sqrt(accumBuffer[i * 3] * invS);
+    const g = Math.sqrt(accumBuffer[i * 3 + 1] * invS);
+    const b = Math.sqrt(accumBuffer[i * 3 + 2] * invS);
+    imgData.data[i * 4] = Math.min(255, r * 255) | 0;
+    imgData.data[i * 4 + 1] = Math.min(255, g * 255) | 0;
+    imgData.data[i * 4 + 2] = Math.min(255, b * 255) | 0;
+    imgData.data[i * 4 + 3] = 255;
+  }
+  renderCtx.putImageData(imgData, 0, 0);
+
+  // Update progress
+  const pct = Math.round((sampleCount / maxSamples) * 100);
+  document.getElementById('progress-bar').style.width = pct + '%';
+  document.getElementById('toolbar-status').textContent = `Rendering: ${pct}%`;
+  document.getElementById('status-text').textContent = `Rendering sample ${sampleCount}/${maxSamples}`;
+  document.getElementById('status-samples').textContent = `Samples: ${sampleCount}/${maxSamples}`;
+
+  if (sampleCount >= maxSamples) {
+    rendering = false;
+    document.getElementById('toolbar-status').textContent = `Done — ${sampleCount} samples`;
+    document.getElementById('status-text').textContent = `Render complete — ${sampleCount} samples`;
+    document.getElementById('status-dot').classList.remove('rendering');
+    document.getElementById('stop-btn').classList.add('hidden');
+    return;
+  }
+
+  animFrame = requestAnimationFrame(renderLoop);
 }
 
-// Add some default objects
-function addDefaultScene() {
-  sceneObjects.push(
-    { type: 'sphere', pos: [0, 1, -4], size: 1, color: [0.9, 0.95, 1.0], colorHex: '#e6f0ff', ior: 1.5 },
-    { type: 'sphere', pos: [-2.2, 0.7, -3.5], size: 0.7, color: [0.5, 0.8, 1.0], colorHex: '#80ccff', ior: 1.45 },
-    { type: 'cube', pos: [2, 0.8, -3.5], size: 0.8, color: [1.0, 0.6, 0.6], colorHex: '#ff9999', ior: 1.7 },
-    { type: 'sphere', pos: [0.8, 0.5, -2], size: 0.5, color: [0.6, 1.0, 0.6], colorHex: '#99ff99', ior: 1.3 }
-  );
-  updateObjectList();
+// ============================================================
+// CSS helper for hidden class
+// ============================================================
+// Using CSS class .hidden { display: none } via inline styles already handled
+
+// ============================================================
+// Init
+// ============================================================
+function initDefaultScene() {
+  addObject('sphere', { px: 0, py: 0.8, pz: -2, size: 0.8, ior: 1.52, color: '#e8f0ff', roughness: 0 });
+  addObject('cube', { px: -1.8, py: 0.6, pz: -1.5, size: 0.6, ior: 1.45, color: '#ffe8f0', roughness: 0.02 });
+  addObject('sphere', { px: 1.5, py: 0.5, pz: -1.2, size: 0.5, ior: 2.0, color: '#f0ffe8', roughness: 0 });
 }
 
-addDefaultScene();
+// Add hidden class support
+document.head.insertAdjacentHTML('beforeend', '<style>.hidden{display:none!important}</style>');
 
-// Handle resize
-window.addEventListener('resize', () => {
-  if (rendering) startRender();
-});
+initDefaultScene();
+updateCameraInfo();
+resizePreview();
 </script>
 </body>
 </html>
